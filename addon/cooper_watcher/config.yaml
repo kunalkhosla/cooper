@@ -1,4 +1,4 @@
-name: Cooper v2 Watcher
+name: Cooper Watcher
 version: "0.1.0"
 slug: cooper_watcher
 description: >-
@@ -7,7 +7,7 @@ description: >-
   threshold is crossed, wakes Cooper by calling the cooper.proactive_check service. It
   holds no Anthropic key and never controls the home directly — the integration owns all
   Claude calls, guardrails, and audit.
-url: https://github.com/kunalkhosla/cooper-v2/tree/main/addon/cooper_watcher
+url: https://github.com/kunalkhosla/cooper/tree/main/addon/cooper_watcher
 arch:
   - aarch64
   - amd64

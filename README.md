@@ -1,4 +1,4 @@
-# Cooper v2
+# Cooper
 
 **A truly agentic AI for Home Assistant — one you talk to, that does things for you, and that works on _your_ home out of the box, whatever you've got plugged in.**
 
@@ -16,12 +16,12 @@ Cooper (v1) was a Claude-powered Home Assistant agent built for exactly one home
 2. **It was add-on-only.** Cooper ran as a Home Assistant OS add-on. Anyone on HA Core or Container — a big slice of the community — couldn't run it at all.
 3. **It was slow, and it was scaffolded.** ~10 seconds before you heard a voice come back, because it processed a large state blob every turn and waited for the whole answer before speaking. And too much of its "intelligence" lived in hand-written use-case prompting rather than in the model.
 
-## Why Cooper v2 is the answer
+## Why Cooper is the answer
 
-Cooper v2 is a fresh build (not a refactor) that fixes all three at the root:
+Cooper is a fresh build (not a refactor) that fixes all three at the root:
 
-1. **It grounds itself in _your_ home — automatically.** Instead of reinventing grounding, Cooper v2 builds on Home Assistant's **built-in LLM Tools API** (the same plumbing the official Anthropic/OpenAI/Gemini conversation integrations use). HA itself generates the description of _your_ exposed devices, areas, and floors and hands the model a curated, exposure-aware tool set — per install, with zero curation from you. Install it on a home it has never seen and it just works.
-2. **It runs anywhere.** Cooper v2 ships as a **HACS custom integration** that works on every HA install type — Core, Container, or OS. An **optional add-on** adds an always-on watcher for people on HAOS, but the full agent (including proactivity) works without it.
+1. **It grounds itself in _your_ home — automatically.** Instead of reinventing grounding, Cooper builds on Home Assistant's **built-in LLM Tools API** (the same plumbing the official Anthropic/OpenAI/Gemini conversation integrations use). HA itself generates the description of _your_ exposed devices, areas, and floors and hands the model a curated, exposure-aware tool set — per install, with zero curation from you. Install it on a home it has never seen and it just works.
+2. **It runs anywhere.** Cooper ships as a **HACS custom integration** that works on every HA install type — Core, Container, or OS. An **optional add-on** adds an always-on watcher for people on HAOS, but the full agent (including proactivity) works without it.
 3. **It's fast, and it streams.** It speaks the first sentence while it's still working the rest, caches the grounding so the first token is quick, and acts on reversible things optimistically. You get a voice back in a beat, not ten seconds.
 4. **It's smart by construction, not by enumeration.** One generic reasoning loop over grounded tools and memory — no per-scenario `if/else`, no catalog of hand-written use cases. The only hard rules are mechanical safety tiers (e.g. _confirm before unlocking a door_). Everything else is the model thinking over real state.
 
@@ -35,10 +35,10 @@ Cooper v2 is a fresh build (not a refactor) that fixes all three at the root:
 
 ## Install (planned)
 
-1. Add this repo to HACS → install **Cooper v2** → restart Home Assistant.
+1. Add this repo to HACS → install **Cooper** → restart Home Assistant.
 2. Add the integration, paste your **Anthropic API key** (bring your own), create an agent.
 3. Point an Assist pipeline at it (your default assistant stays untouched). Start in observe mode.
-4. _Optional (HAOS):_ install the **Cooper v2 Watcher** add-on for always-on watching.
+4. _Optional (HAOS):_ install the **Cooper Watcher** add-on for always-on watching.
 
 ## Architecture & plan
 

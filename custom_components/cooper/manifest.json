@@ -1,14 +1,14 @@
 {
   "domain": "cooper",
-  "name": "Cooper v2",
+  "name": "Cooper",
   "after_dependencies": ["assist_pipeline", "intent", "recorder", "camera", "automation"],
   "codeowners": ["@kunalkhosla"],
   "config_flow": true,
   "dependencies": ["conversation"],
-  "documentation": "https://github.com/kunalkhosla/cooper-v2",
+  "documentation": "https://github.com/kunalkhosla/cooper",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/kunalkhosla/cooper-v2/issues",
+  "issue_tracker": "https://github.com/kunalkhosla/cooper/issues",
   "requirements": ["anthropic==0.96.0"],
   "version": "0.2.0"
 }

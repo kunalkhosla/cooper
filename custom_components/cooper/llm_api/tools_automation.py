@@ -27,17 +27,22 @@ class AuthorAutomationTool(CooperTool):
     description = (
         "Create a native Home Assistant automation or script. Use 'automation' for things "
         "that should run on a trigger (time, state change, event). Use 'script' for a named, "
-        "ordered sequence of actions the user (or you) can run on demand, including timed "
-        "steps with delays (e.g. run one sprinkler zone, wait, then the next). Provide the "
-        "full HA config as 'config'. The config is validated before saving; if it is "
-        "rejected, read the errors and call again with a corrected config. This changes the "
-        "home, so it needs confirmation unless confirm=true."
+        "ordered sequence of actions to run on demand, including TIMED steps with delays — "
+        "this is the right tool for sequenced jobs like running sprinkler zone 5 for 1 minute "
+        "then zone 4 for 2 minutes (turn a switch on, add a `delay`, turn it off, then the "
+        "next). For such a request, author ONE script with the full delay sequence (always "
+        "include the explicit turn-off after each delay) and set run_now=true to start it "
+        "immediately — it then runs reliably to completion even after this conversation ends. "
+        "Do not try to run timed sequences by flipping switches yourself. The config is "
+        "validated before saving; if rejected, read the errors and call again with a fix. "
+        "This changes the home, so it needs confirmation unless confirm=true."
     )
     parameters = vol.Schema(
         {
             vol.Required("kind"): vol.In(["automation", "script"]),
             vol.Required("alias"): str,
             vol.Required("config"): dict,
+            vol.Optional("run_now", default=False): bool,
             vol.Optional("confirm", default=False): bool,
         }
     )
@@ -55,6 +60,7 @@ class AuthorAutomationTool(CooperTool):
         alias = str(tool_input.tool_args["alias"])
         config = dict(tool_input.tool_args["config"])
         confirmed = bool(tool_input.tool_args.get("confirm", False))
+        run_now = bool(tool_input.tool_args.get("run_now", False))
 
         config.setdefault("alias", alias)
 
@@ -82,13 +88,25 @@ class AuthorAutomationTool(CooperTool):
         else:
             entity_id = await autoconfig.async_save_script(hass, alias, config)
 
+        # We are past precheck_write (kill off, observe off, confirmed), so it is safe to
+        # start the thing we just created. A script runs its full delayed sequence to
+        # completion independently of this conversation; an automation gets triggered once.
+        started = False
+        if run_now:
+            run_service = "turn_on" if kind == "script" else "trigger"
+            run_domain = "script" if kind == "script" else "automation"
+            await hass.services.async_call(
+                run_domain, run_service, {"entity_id": entity_id}, blocking=False
+            )
+            started = True
+
         audit(
             hass,
             runtime,
             {
                 "tool": self.name,
                 "base": self.name,
-                "args": {"kind": kind, "alias": alias},
+                "args": {"kind": kind, "alias": alias, "run_now": run_now},
                 "tier": "CONFIRM",
                 "decision": "executed",
                 "observe": runtime.observe_mode,
@@ -96,4 +114,9 @@ class AuthorAutomationTool(CooperTool):
                 "result": entity_id,
             },
         )
-        return {"status": "created", "kind": kind, "entity_id": entity_id}
+        return {
+            "status": "created",
+            "kind": kind,
+            "entity_id": entity_id,
+            "started": started,
+        }

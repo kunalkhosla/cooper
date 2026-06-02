@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="Cooper">
+  <defs>
+    <linearGradient id="tile" x1="0.15" y1="0" x2="0.85" y2="1">
+      <stop offset="0" stop-color="#2A2018"/>
+      <stop offset="0.55" stop-color="#19120D"/>
+      <stop offset="1" stop-color="#0E0A07"/>
+    </linearGradient>
+    <linearGradient id="warm" x1="0.28" y1="0.05" x2="0.72" y2="0.95">
+      <stop offset="0" stop-color="#FFDE7A"/>
+      <stop offset="0.42" stop-color="#FFA23E"/>
+      <stop offset="1" stop-color="#FF5A33"/>
+    </linearGradient>
+    <radialGradient id="halo" cx="0.5" cy="0.5" r="0.55">
+      <stop offset="0" stop-color="#FF8A3C" stop-opacity="0.45"/>
+      <stop offset="0.6" stop-color="#FF6B33" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#FF6B33" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="core" cx="0.4" cy="0.34" r="0.75">
+      <stop offset="0" stop-color="#FFF6DC"/>
+      <stop offset="0.5" stop-color="#FFCB5C"/>
+      <stop offset="1" stop-color="#FF7A36"/>
+    </radialGradient>
+    <radialGradient id="coreGlow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#FFD479" stop-opacity="0.9"/>
+      <stop offset="1" stop-color="#FFD479" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="sheen" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.16"/>
+      <stop offset="0.5" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+
+  <!-- warm dark tile -->
+  <rect x="0" y="0" width="512" height="512" rx="118" fill="url(#tile)"/>
+  <rect x="0" y="0" width="512" height="512" rx="118" fill="url(#sheen)"/>
+
+  <!-- ambient warmth behind the mark -->
+  <circle cx="256" cy="256" r="210" fill="url(#halo)"/>
+
+  <!-- the C: a bold arc opening to the right, with round terminals -->
+  <path d="M 336 358 A 130 130 0 1 1 336 154"
+        fill="none" stroke="url(#warm)" stroke-width="62" stroke-linecap="round"/>
+
+  <!-- the glowing core the C cradles -->
+  <circle cx="256" cy="256" r="74" fill="url(#coreGlow)"/>
+  <circle cx="256" cy="256" r="33" fill="url(#core)"/>
+</svg>

@@ -1,4 +1,4 @@
-# Cooper v2 Watcher
+# Cooper Watcher
 
 Optional add-on for Home Assistant OS / Supervisor. It is **not required** — the Cooper
 integration delivers the full agent and proactivity on its own. This add-on only adds
@@ -8,7 +8,7 @@ home directly.
 
 ## Requirements
 
-Install and configure the **Cooper v2** integration first (it provides the
+Install and configure the **Cooper** integration first (it provides the
 `cooper.proactive_check` service).
 
 ## Options

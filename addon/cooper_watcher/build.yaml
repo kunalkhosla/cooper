@@ -3,4 +3,4 @@ build_from:
   amd64: ghcr.io/home-assistant/amd64-base-python:3.12-alpine3.20
   armv7: ghcr.io/home-assistant/armv7-base-python:3.12-alpine3.20
 labels:
-  org.opencontainers.image.source: https://github.com/kunalkhosla/cooper-v2
+  org.opencontainers.image.source: https://github.com/kunalkhosla/cooper

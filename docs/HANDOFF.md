@@ -1,4 +1,4 @@
-# Handoff — Cooper v2 build state
+# Handoff — Cooper build state
 
 This branch was started in a Claude Code **web** session that could not push (the sandbox
 had no GitHub write credentials and no `ssh`). Everything is committed locally; continue in

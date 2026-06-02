@@ -1,4 +1,4 @@
-# Cooper v2 — hardened, buildable implementation plan
+# Cooper — hardened, buildable implementation plan
 
 ## Context
 
@@ -228,7 +228,7 @@ calling only `cooper.proactive_check`.
 /                      hacs.json  repository.yaml  README.md  info.md  LICENSE  .gitignore
 .github/workflows/     validate.yml (hassfest + HACS validation + add-on lint + multi-arch build)
 custom_components/cooper/
-  manifest.json        domain "cooper", name "Cooper v2", dependencies ["conversation"],
+  manifest.json        domain "cooper", name "Cooper", dependencies ["conversation"],
                        after_dependencies ["assist_pipeline","intent","recorder","camera"],
                        requirements ["anthropic==0.96.0"], integration_type "service",
                        iot_class "cloud_polling", config_flow true, codeowners/documentation/issue_tracker/version
