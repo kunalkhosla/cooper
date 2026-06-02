@@ -283,7 +283,7 @@ docs/PLAN.md           keep, but scrub (see hygiene)
 
 ## Public-repo hygiene (do before pushing)
 
-- **Scrub `docs/PLAN.md`:** replace the real LAN IP `192.168.0.194` with a placeholder ("your HA host, e.g. `homeassistant.local`"); remove the personal name shortlist and standardize on `cooper`.
+- **Scrub `docs/PLAN.md`:** replace any real LAN IP with a placeholder ("your HA host, e.g. `homeassistant.local`"); remove the personal name shortlist and standardize on `cooper`.
 - **No secrets, ever:** API key lives only in HA's encrypted config entry (entered at runtime, never committed); the add-on uses the runtime-injected `SUPERVISOR_TOKEN`. No keys, tokens, emails, or real entity ids in any tracked file.
 - **`.gitignore`:** `__pycache__/`, `*.pyc`, `.venv/`, `secrets.yaml`, `docs/*.local.md`.
 - **Local-only home notes:** keep any home-specific verification details in a git-ignored `docs/VERIFY.local.md`.
