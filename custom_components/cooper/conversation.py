@@ -8,6 +8,8 @@ shared loop runs and we return the chat-log result.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL
@@ -22,6 +24,35 @@ from .const import (
     SUBENTRY_TYPE_CONVERSATION,
 )
 from .entity import CooperBaseLLMEntity
+
+if TYPE_CHECKING:
+    from . import CooperRuntime
+
+
+def _mode_status(runtime: CooperRuntime) -> str:
+    """A short, authoritative statement of Cooper's current safety mode.
+
+    Injected into the system prompt so the model knows its mode instead of guessing
+    (and so it stops offering to act when it actually cannot).
+    """
+    if runtime.kill_switch:
+        return (
+            "CURRENT MODE: the kill switch is ON. You cannot take any action right now. "
+            "Tell the user the kill switch is on and that nothing can be changed until it "
+            "is turned off; do not offer to act."
+        )
+    if runtime.observe_mode:
+        return (
+            "CURRENT MODE: observe mode is ON. You can read state, look at cameras, and "
+            "answer, but you cannot change anything — acting tools only report what they "
+            "*would* do. Say so plainly and do not offer to perform actions until the user "
+            "turns observe mode off (via the Cooper 'Observe Mode' switch)."
+        )
+    return (
+        "CURRENT MODE: observe mode is OFF. You may act within your guardrails — reversible "
+        "actions run immediately; risky ones (locks, alarms, garages, bulk changes) require "
+        "a spoken yes/no confirmation, which you must honor."
+    )
 
 
 async def async_setup_entry(
@@ -80,9 +111,12 @@ class CooperConversationEntity(
         # Insert 1: gate the auto-executed action tools with mechanical guardrails.
         guardrails.wrap_tools(self.hass, chat_log, self.runtime)
 
-        # Insert 2: stash durable preferences for the (separately cached) memory block.
+        # Insert 2: tell the model its live safety mode, then its durable preferences.
         user_id = user_input.context.user_id if user_input.context else None
-        self._memory_block = await self.runtime.memory.get_block(user_id, None)
+        memory = await self.runtime.memory.get_block(user_id, None)
+        self._memory_block = "\n\n".join(
+            block for block in (_mode_status(self.runtime), memory) if block
+        )
 
         await self._async_handle_chat_log(chat_log)
         return conversation.async_get_result_from_chat_log(user_input, chat_log)

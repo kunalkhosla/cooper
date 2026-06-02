@@ -21,7 +21,7 @@ import yaml
 from homeassistant.core import HomeAssistant
 from homeassistant.util import slugify, ulid as ulid_util
 
-from ..const import AUTHORED_PREFIX
+from ..const import AUTHORED_ALIAS_PREFIX, AUTHORED_PREFIX
 
 AUTOMATIONS_FILE = "automations.yaml"
 SCRIPTS_FILE = "scripts.yaml"
@@ -45,6 +45,13 @@ def _write_yaml(path: str, data: Any) -> None:
 def new_authored_id() -> str:
     """A stable, auditable id for a Cooper-authored config."""
     return f"{AUTHORED_PREFIX}{ulid_util.ulid_now().lower()}"
+
+
+def _tag_alias(config: dict[str, Any]) -> None:
+    """Prefix the friendly name with [Cooper] so authored items are visible in the UI."""
+    alias = config.get("alias")
+    if isinstance(alias, str) and alias and "cooper" not in alias.lower():
+        config["alias"] = AUTHORED_ALIAS_PREFIX + alias
 
 
 def _save_automation_sync(path: str, config: dict[str, Any]) -> None:
@@ -81,6 +88,7 @@ async def async_save_automation(
 ) -> str:
     """Stamp an id, persist, reload. Returns the resulting automation entity_id."""
     config.setdefault("id", new_authored_id())
+    _tag_alias(config)
     config_id = str(config["id"])
     path = hass.config.path(AUTOMATIONS_FILE)
     await hass.async_add_executor_job(partial(_save_automation_sync, path, config))
@@ -93,6 +101,8 @@ async def async_save_script(
 ) -> str:
     """Persist a script under a cooper_-prefixed object id, reload. Returns entity_id."""
     object_id = f"{AUTHORED_PREFIX}{slugify(alias)}"
+    config.setdefault("alias", alias)
+    _tag_alias(config)
     path = hass.config.path(SCRIPTS_FILE)
     await hass.async_add_executor_job(
         partial(_save_script_sync, path, object_id, config)

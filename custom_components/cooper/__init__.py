@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from collections import deque
 from dataclasses import dataclass, field
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
@@ -29,7 +30,7 @@ from .memory import MemoryStore
 from .provider.anthropic_client import AnthropicProvider
 from .services import async_setup_services, async_unload_services
 
-PLATFORMS = [Platform.CONVERSATION]
+PLATFORMS = [Platform.CONVERSATION, Platform.SWITCH]
 AUDIT_LOG_MAX = 200
 
 
@@ -48,6 +49,9 @@ class CooperRuntime:
     )
     audit_log: deque = field(default_factory=lambda: deque(maxlen=AUDIT_LOG_MAX))
     proactive_last_fired: dict[str, float] = field(default_factory=dict)
+    # UI toggle entities (registered by the switch platform) so services can sync them.
+    observe_switch: Any = None
+    kill_switch_entity: Any = None
 
 
 CooperConfigEntry = ConfigEntry[CooperRuntime]

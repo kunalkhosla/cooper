@@ -116,12 +116,16 @@ def async_setup_services(hass: HomeAssistant) -> None:
         observe = call.data[ATTR_OBSERVE]
         for runtime in hass.data[DOMAIN]["runtimes"].values():
             runtime.observe_mode = observe
+            if runtime.observe_switch is not None:
+                runtime.observe_switch.async_write_ha_state()
         LOGGER.info("Cooper observe mode set to %s", observe)
 
     async def handle_kill_switch(call: ServiceCall) -> None:
         enabled = call.data[ATTR_ENABLED]
         for runtime in hass.data[DOMAIN]["runtimes"].values():
             runtime.kill_switch = enabled
+            if runtime.kill_switch_entity is not None:
+                runtime.kill_switch_entity.async_write_ha_state()
         LOGGER.warning("Cooper kill switch set to %s", enabled)
 
     hass.services.async_register(
