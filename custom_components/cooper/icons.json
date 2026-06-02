@@ -1,0 +1,13 @@
+{
+  "services": {
+    "proactive_check": {
+      "service": "mdi:robot-outline"
+    },
+    "set_observe_mode": {
+      "service": "mdi:eye-outline"
+    },
+    "kill_switch": {
+      "service": "mdi:stop-circle-outline"
+    }
+  }
+}

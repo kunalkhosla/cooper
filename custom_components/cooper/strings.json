@@ -1,0 +1,128 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect Cooper to Anthropic",
+        "description": "Cooper uses your own Anthropic (Claude) API key. It is stored encrypted in Home Assistant and never leaves your install except to call the Anthropic API.",
+        "data": {
+          "api_key": "API key"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid API key.",
+      "cannot_connect": "Failed to connect to Anthropic.",
+      "unknown": "Unexpected error."
+    },
+    "abort": {
+      "already_configured": "This API key is already configured."
+    }
+  },
+  "config_subentries": {
+    "conversation": {
+      "initiate_flow": {
+        "user": "Add Cooper agent",
+        "reconfigure": "Reconfigure Cooper agent"
+      },
+      "entry_type": "Cooper agent",
+      "step": {
+        "init": {
+          "title": "Cooper agent",
+          "description": "Give this agent a name and a short persona. Leave 'Recommended settings' on to use sensible defaults.",
+          "data": {
+            "name": "Name",
+            "prompt": "Persona instructions",
+            "llm_hass_api": "Home Assistant tools",
+            "recommended": "Recommended settings"
+          },
+          "data_description": {
+            "prompt": "A short, principle-based persona. Cooper's intelligence comes from the model, not from listing scenarios here.",
+            "llm_hass_api": "Keep both Assist (home grounding + control) and Cooper (history, vision, memory, automations, proactivity) selected."
+          }
+        },
+        "advanced": {
+          "title": "Advanced settings",
+          "data": {
+            "chat_model": "Model",
+            "prompt_caching": "Prompt caching",
+            "max_tokens": "Maximum tokens per reply",
+            "thinking_budget": "Extended thinking budget (0 = off)",
+            "web_search": "Enable web search",
+            "web_search_max_uses": "Max web searches per turn",
+            "observe_mode": "Start in observe mode",
+            "proactivity": "Allow proactivity",
+            "confirm_bulk_threshold": "Confirm when acting on more than this many entities"
+          },
+          "data_description": {
+            "observe_mode": "In observe mode Cooper says what it would do but changes nothing. Recommended for a new home.",
+            "thinking_budget": "Higher values let Claude reason longer but add latency; keep low for voice."
+          }
+        }
+      },
+      "error": {
+        "unknown": "Unexpected error."
+      }
+    }
+  },
+  "selector": {
+    "prompt_caching": {
+      "options": {
+        "off": "Off",
+        "prompt": "Cache the stable prompt prefix",
+        "automatic": "Automatic"
+      }
+    }
+  },
+  "services": {
+    "proactive_check": {
+      "name": "Proactive check",
+      "description": "Wake Cooper to look at the home and decide whether to act or say something.",
+      "fields": {
+        "reason": {
+          "name": "Reason",
+          "description": "Why Cooper is being woken (used to focus its attention)."
+        },
+        "context_entities": {
+          "name": "Context entities",
+          "description": "Entities Cooper should pay attention to."
+        },
+        "notify_target": {
+          "name": "Notify target",
+          "description": "Optional notify service to forward Cooper's message to (e.g. notify.mobile_app_phone)."
+        },
+        "agent_id": {
+          "name": "Agent",
+          "description": "Which Cooper conversation agent to use. Defaults to the first one."
+        },
+        "conversation_id": {
+          "name": "Conversation id",
+          "description": "Optional conversation to continue instead of starting fresh."
+        },
+        "cooldown_minutes": {
+          "name": "Cooldown (minutes)",
+          "description": "Skip if the same reason fired more recently than this."
+        }
+      }
+    },
+    "set_observe_mode": {
+      "name": "Set observe mode",
+      "description": "Turn observe mode on (Cooper changes nothing) or off (Cooper acts within its guardrails).",
+      "fields": {
+        "observe": {
+          "name": "Observe",
+          "description": "True to observe only, false to allow actions."
+        }
+      }
+    },
+    "kill_switch": {
+      "name": "Kill switch",
+      "description": "Instantly stop Cooper from taking any action.",
+      "fields": {
+        "enabled": {
+          "name": "Enabled",
+          "description": "True to refuse all actions, false to resume normal operation."
+        }
+      }
+    }
+  }
+}

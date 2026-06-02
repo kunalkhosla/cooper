@@ -1,0 +1,44 @@
+proactive_check:
+  fields:
+    reason:
+      required: true
+      example: "basement humidity is high"
+      selector:
+        text:
+    context_entities:
+      example: "[sensor.basement_humidity, fan.basement]"
+      selector:
+        entity:
+          multiple: true
+    notify_target:
+      example: "notify.mobile_app_phone"
+      selector:
+        text:
+    agent_id:
+      example: "conversation.cooper"
+      selector:
+        text:
+    conversation_id:
+      selector:
+        text:
+    cooldown_minutes:
+      default: 15
+      selector:
+        number:
+          min: 0
+          max: 1440
+          unit_of_measurement: minutes
+
+set_observe_mode:
+  fields:
+    observe:
+      required: true
+      selector:
+        boolean:
+
+kill_switch:
+  fields:
+    enabled:
+      required: true
+      selector:
+        boolean:
