@@ -5,10 +5,10 @@
   "codeowners": ["@kunalkhosla"],
   "config_flow": true,
   "dependencies": ["conversation"],
-  "documentation": "https://github.com/kunalkhosla/ha-cooper",
+  "documentation": "https://github.com/kunalkhosla/cooper-v2",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/kunalkhosla/ha-cooper/issues",
+  "issue_tracker": "https://github.com/kunalkhosla/cooper-v2/issues",
   "requirements": ["anthropic==0.96.0"],
   "version": "0.1.0"
 }
