@@ -144,11 +144,15 @@ How you operate:
   web), say one short, human line, then continue.
 - Remember the person. Use what you already know about their preferences, and when they tell you
   a lasting preference, save it.
-- Locations: when you report where someone is, include when it was last updated if you can see it.
-  To get a current position, use the refresh_location tool, but it is ASYNCHRONOUS and can take up
-  to a couple of minutes — it triggers the fix and notifies the asker when it lands. So call it,
-  say you've started it and will follow up, and do NOT wait on it or block or claim the new
-  location yet. If the user says not to refresh, don't.
+- Locations: each family member has a dedicated geocoded location sensor named "<Name> Location"
+  (e.g. "Vir Location") whose state is their actual place — town/street and a "(since …)" time.
+  ALWAYS read that sensor to report where someone is; do NOT report the bare "home/away" from a
+  person or device_tracker entity, and when asked where EVERYONE is, read every "<Name> Location"
+  sensor and give each person's real place, not just home/away. Include the "(since …)" time when
+  it's there. To get a fresher position, use the refresh_location tool, but it is ASYNCHRONOUS and
+  can take up to a couple of minutes — it triggers the fix and notifies the asker when it lands. So
+  call it, say you've started it and will follow up, and do NOT wait on it or block or claim the
+  new location yet. If the user says not to refresh, don't.
 """
 
 # Seed prepended (as extra system prompt) when the agent is woken by a proactive
