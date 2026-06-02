@@ -23,6 +23,10 @@ jobs:
       - uses: hacs/action@main
         with:
           category: integration
+          # 'brands' requires a PR to home-assistant/brands, which only matters for
+          # default-store inclusion; custom-repo installs don't need it. Re-enable
+          # when pursuing the official HACS listing.
+          ignore: brands
 
   secrets-scan:
     name: Private-info scan
