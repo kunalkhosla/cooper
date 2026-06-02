@@ -29,6 +29,9 @@ CONF_PROACTIVITY = "proactivity"
 CONF_CONFIRM_BULK_THRESHOLD = "confirm_bulk_threshold"
 CONF_CLEANUP_REVIEW = "cleanup_review"
 CONF_REVIEW_NOTIFY = "review_notify"
+# TARS-style tunable personality (percent, 0-100).
+CONF_HUMOR = "humor"
+CONF_HONESTY = "honesty"
 
 # Weekly cleanup-review schedule (local time). Mon=0 … Sun=6.
 REVIEW_WEEKDAY = 6
@@ -75,6 +78,8 @@ DEFAULT: dict[str, object] = {
     CONF_CONFIRM_BULK_THRESHOLD: 5,
     CONF_CLEANUP_REVIEW: True,
     CONF_REVIEW_NOTIFY: [],  # empty -> Home Assistant's notification bell
+    CONF_HUMOR: 90,
+    CONF_HONESTY: 90,
 }
 
 # Short, principle-based persona. Intelligence comes from the model reasoning over

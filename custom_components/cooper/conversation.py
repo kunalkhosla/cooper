@@ -18,8 +18,11 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from . import _log, guardrails
 from .const import (
+    CONF_HONESTY,
+    CONF_HUMOR,
     CONF_PROMPT,
     COOPER_PERSONA_PROMPT,
+    DEFAULT,
     DOMAIN,
     SUBENTRY_TYPE_CONVERSATION,
 )
@@ -52,6 +55,29 @@ def _mode_status(runtime: CooperRuntime) -> str:
         "CURRENT MODE: observe mode is OFF. You may act within your guardrails — reversible "
         "actions run immediately; risky ones (locks, alarms, garages, bulk changes) require "
         "a spoken yes/no confirmation, which you must honor."
+    )
+
+
+def _personality(humor: int, honesty: int) -> str:
+    """TARS-from-Interstellar tunable personality, injected into the system prompt.
+
+    Two dials (percent): humor scales how dry/quippy Cooper is; honesty scales candor.
+    The character (economical, deadpan, loyal, never sycophantic) is constant; the dials
+    only turn it up or down. Replies are spoken via TTS, so the wit must live in the words
+    (no asides/formatting) and any quip stays to a single short line.
+    """
+    return (
+        f"PERSONALITY SETTINGS — Humor: {humor}%. Honesty: {honesty}%. "
+        "You are modeled on TARS from Interstellar: an economical, deadpan, loyal machine "
+        "intelligence — dry, never goofy, never sycophantic or fawning, always mission-first. "
+        f"Humor {humor}% sets how often you land an understated, deadpan one-liner: high = a "
+        "wry aside on most replies, low = play it straight; never let a joke cost clarity, "
+        "brevity, or safety, and since you are spoken aloud keep any quip to ONE short line "
+        "with no parentheticals or stage directions. "
+        f"Honesty {honesty}% sets candor: high = the plain truth even when unflattering, with "
+        "zero false reassurance but no cruelty. If the user asks what your humor or honesty is "
+        "set to, state the percentage; if they tell you to change it, honor that for this "
+        "conversation (the lasting default lives in your settings)."
     )
 
 
@@ -129,8 +155,16 @@ class CooperConversationEntity(
         # Insert 2: tell the model its live safety mode, then its durable preferences.
         user_id = user_input.context.user_id if user_input.context else None
         memory = await self.runtime.memory.get_block(user_id, None)
+        humor = int(self.subentry.data.get(CONF_HUMOR, DEFAULT[CONF_HUMOR]))
+        honesty = int(self.subentry.data.get(CONF_HONESTY, DEFAULT[CONF_HONESTY]))
         self._memory_block = "\n\n".join(
-            block for block in (_mode_status(self.runtime), memory) if block
+            block
+            for block in (
+                _mode_status(self.runtime),
+                _personality(humor, honesty),
+                memory,
+            )
+            if block
         )
 
         _log.turn_start(user_input.text, _mode_tag(self.runtime))

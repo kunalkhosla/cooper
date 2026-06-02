@@ -37,6 +37,8 @@ from .const import (
     CONF_CHAT_MODEL,
     CONF_CLEANUP_REVIEW,
     CONF_CONFIRM_BULK_THRESHOLD,
+    CONF_HONESTY,
+    CONF_HUMOR,
     CONF_MAX_TOKENS,
     CONF_OBSERVE_MODE,
     CONF_PROACTIVITY,
@@ -240,6 +242,18 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
                         CONF_WEB_SEARCH_MAX_USES, DEFAULT[CONF_WEB_SEARCH_MAX_USES]
                     ),
                 ): NumberSelector(NumberSelectorConfig(min=1, max=20, step=1)),
+                vol.Required(
+                    CONF_HUMOR,
+                    default=self._options.get(CONF_HUMOR, DEFAULT[CONF_HUMOR]),
+                ): NumberSelector(
+                    NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%")
+                ),
+                vol.Required(
+                    CONF_HONESTY,
+                    default=self._options.get(CONF_HONESTY, DEFAULT[CONF_HONESTY]),
+                ): NumberSelector(
+                    NumberSelectorConfig(min=0, max=100, step=5, unit_of_measurement="%")
+                ),
                 vol.Required(
                     CONF_OBSERVE_MODE,
                     default=self._options.get(
