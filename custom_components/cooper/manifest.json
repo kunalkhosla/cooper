@@ -1,7 +1,7 @@
 {
   "domain": "cooper",
   "name": "Cooper",
-  "after_dependencies": ["assist_pipeline", "intent", "recorder", "camera", "automation"],
+  "after_dependencies": ["assist_pipeline", "intent", "recorder", "camera", "automation", "ffmpeg", "media_source"],
   "codeowners": ["@kunalkhosla"],
   "config_flow": true,
   "dependencies": ["conversation"],
@@ -10,5 +10,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/kunalkhosla/cooper/issues",
   "requirements": ["anthropic==0.96.0"],
-  "version": "0.9.0"
+  "version": "0.9.1"
 }
