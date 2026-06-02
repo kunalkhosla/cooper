@@ -16,6 +16,7 @@ from .tools_automation import AuthorAutomationTool
 from .tools_footage import LookAtFootageTool
 from .tools_history import HistoryTool
 from .tools_lifecycle import ListAuthoredTool, RemoveAuthoredTool
+from .tools_location import RefreshLocationTool
 from .tools_memory import ForgetTool, RecallTool, RememberTool
 from .tools_proactivity import CreateWatchTool, ListWatchesTool, RemoveWatchTool
 from .tools_vision import VisionTool
@@ -23,7 +24,9 @@ from .tools_vision import VisionTool
 COOPER_API_PROMPT = (
     "You also have Cooper's own tools, beyond controlling exposed devices: look at a "
     "camera live and describe it, look at a camera's RECORDED footage at a past time "
-    "(look_at_recorded_footage), query an entity's recent history, remember and recall the "
+    "(look_at_recorded_footage), query an entity's recent history, force a fresh current "
+    "location fix for a family member and follow up by notification when it lands "
+    "(refresh_location, asynchronous), remember and recall the "
     "user's lasting preferences, author native automations and scripts (including timed, "
     "sequenced ones), and set up proactive watches that wake you when something happens. "
     "Prefer authoring a durable automation/script over promising to do something later. "
@@ -47,6 +50,7 @@ class CooperAPI(llm.API):
             HistoryTool(),
             VisionTool(),
             LookAtFootageTool(),
+            RefreshLocationTool(),
             RememberTool(),
             RecallTool(),
             ForgetTool(),
