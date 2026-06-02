@@ -1,10 +1,17 @@
-# Cooper
+<p align="center">
+  <img src="brand/icon.svg" alt="Cooper" width="118" />
+</p>
 
-**A truly agentic AI for Home Assistant — one you talk to, that does things for you, and that works on _your_ home out of the box, whatever you've got plugged in.**
+<h1 align="center">Cooper</h1>
+
+<p align="center">
+  <strong>A truly agentic AI for Home Assistant — one you talk to, that does things for you,<br/>
+  and that works on <em>your</em> home out of the box, whatever you've got plugged in.</strong>
+</p>
 
 You speak (or type) to it. It reasons over your live home, takes the safe stuff itself, asks before the risky stuff, remembers what you like, and can watch things for you proactively. It is not a pile of automations and it is not a rigid voice command parser — it's an agent.
 
-> Status: **planning** → see [`docs/PLAN.md`](docs/PLAN.md) for the full architecture and build order.
+> Status: **running on Home Assistant** → see [`docs/PLAN.md`](docs/PLAN.md) for the architecture and [`docs/BUILD_PLAN.md`](docs/BUILD_PLAN.md) for the build.
 
 ---
 

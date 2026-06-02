@@ -48,7 +48,7 @@ class _CooperControlSwitch(SwitchEntity, RestoreEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"{entry.entry_id}_controls")},
             name=f"{ENTRY_TITLE} Controls",
-            manufacturer="Anthropic",
+            manufacturer="Cooper",
             entry_type=DeviceEntryType.SERVICE,
         )
 
