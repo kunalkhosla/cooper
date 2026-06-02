@@ -15,8 +15,8 @@ DEFAULT_CONVERSATION_NAME = "Cooper"
 # Subentry type for conversation agents (one entity per subentry).
 SUBENTRY_TYPE_CONVERSATION = "conversation"
 
-# Config option keys (HA core supplies CONF_API_KEY / CONF_LLM_HASS_API /
-# CONF_PROMPT / CONF_NAME).
+# Config option keys (HA core supplies CONF_API_KEY / CONF_LLM_HASS_API / CONF_NAME).
+CONF_PROMPT = "prompt"
 CONF_RECOMMENDED = "recommended"
 CONF_CHAT_MODEL = "chat_model"
 CONF_MAX_TOKENS = "max_tokens"
