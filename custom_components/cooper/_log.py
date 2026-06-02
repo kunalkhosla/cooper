@@ -68,6 +68,7 @@ _TOOL_EMOJI = {
     # Cooper's own tools
     "get_history": "🕘",
     "look_at_camera": "📷",
+    "look_at_recorded_footage": "🎞️",
     "remember": "🧠",
     "recall": "🧠",
     "forget": "🧠",

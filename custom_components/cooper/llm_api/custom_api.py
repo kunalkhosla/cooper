@@ -13,6 +13,7 @@ from homeassistant.helpers import llm
 
 from ..const import DOMAIN
 from .tools_automation import AuthorAutomationTool
+from .tools_footage import LookAtFootageTool
 from .tools_history import HistoryTool
 from .tools_lifecycle import ListAuthoredTool, RemoveAuthoredTool
 from .tools_memory import ForgetTool, RecallTool, RememberTool
@@ -21,7 +22,8 @@ from .tools_vision import VisionTool
 
 COOPER_API_PROMPT = (
     "You also have Cooper's own tools, beyond controlling exposed devices: look at a "
-    "camera and describe it, query an entity's recent history, remember and recall the "
+    "camera live and describe it, look at a camera's RECORDED footage at a past time "
+    "(look_at_recorded_footage), query an entity's recent history, remember and recall the "
     "user's lasting preferences, author native automations and scripts (including timed, "
     "sequenced ones), and set up proactive watches that wake you when something happens. "
     "Prefer authoring a durable automation/script over promising to do something later. "
@@ -44,6 +46,7 @@ class CooperAPI(llm.API):
         tools: list[llm.Tool] = [
             HistoryTool(),
             VisionTool(),
+            LookAtFootageTool(),
             RememberTool(),
             RecallTool(),
             ForgetTool(),
