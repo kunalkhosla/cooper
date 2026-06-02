@@ -75,6 +75,17 @@ To try it now: Developer Tools → Actions → `cooper.review_cleanup` → Run.
 3. Point an Assist pipeline at it (your default assistant stays untouched). Start in observe mode.
 4. _Optional (HAOS):_ install the **Cooper Watcher** add-on for always-on watching.
 
+## Best practices — set up your home so Cooper shines
+
+Cooper sees the entities you **expose**, identifies them by **friendly name**, and reasons over
+their **areas, floors, and zones**. A little Home Assistant hygiene — clear names, no collisions,
+everything placed in an area, people/zones/location sensors set up, cameras named by what they
+watch — is the difference between "telepathic" and "guessing."
+
+➡️ **[`docs/BEST_PRACTICES.md`](docs/BEST_PRACTICES.md)** covers exactly what to do for
+exposure, naming & aliases, areas/floors, **people · presence · location**, **cameras & vision**,
+lock/garage safety tiering, history, the voice pipeline, and a verification checklist.
+
 ## Architecture & plan
 
 The full design — verified against current Home Assistant internals — lives in [`docs/PLAN.md`](docs/PLAN.md): the HA LLM-API grounding backbone, the streaming low-latency loop, the portable proactivity model, guardrails, the optional add-on boundary, and the phased build order.
