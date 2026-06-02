@@ -21,6 +21,7 @@ from homeassistant.helpers.event import async_track_time_change
 from .const import (
     CONF_CLEANUP_REVIEW,
     CONF_CONFIRM_BULK_THRESHOLD,
+    CONF_LOCATE_NOTIFY,
     CONF_OBSERVE_MODE,
     CONF_REVIEW_NOTIFY,
     DEFAULT,
@@ -52,6 +53,7 @@ class CooperRuntime:
     observe_mode: bool
     kill_switch: bool = False
     confirm_bulk_threshold: int = 5
+    location_notify: list[str] = field(default_factory=list)
     pending_confirmations: PendingConfirmations = field(
         default_factory=PendingConfirmations
     )
@@ -102,6 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CooperConfigEntry) -> bo
         memory=MemoryStore(hass),
         observe_mode=_seed_observe_mode(entry),
         confirm_bulk_threshold=confirm_threshold,
+        location_notify=list(_seed_subentry_value(entry, CONF_LOCATE_NOTIFY) or []),
     )
     entry.runtime_data = runtime
     domain_data["runtimes"][entry.entry_id] = runtime

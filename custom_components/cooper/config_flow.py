@@ -39,6 +39,7 @@ from .const import (
     CONF_CONFIRM_BULK_THRESHOLD,
     CONF_HONESTY,
     CONF_HUMOR,
+    CONF_LOCATE_NOTIFY,
     CONF_MAX_TOKENS,
     CONF_OBSERVE_MODE,
     CONF_PROACTIVITY,
@@ -276,6 +277,18 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
                     CONF_REVIEW_NOTIFY,
                     default=self._options.get(
                         CONF_REVIEW_NOTIFY, DEFAULT[CONF_REVIEW_NOTIFY]
+                    ),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=self._notify_options(),
+                        multiple=True,
+                        custom_value=True,
+                    )
+                ),
+                vol.Optional(
+                    CONF_LOCATE_NOTIFY,
+                    default=self._options.get(
+                        CONF_LOCATE_NOTIFY, DEFAULT[CONF_LOCATE_NOTIFY]
                     ),
                 ): SelectSelector(
                     SelectSelectorConfig(

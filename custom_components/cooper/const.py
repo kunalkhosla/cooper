@@ -29,6 +29,8 @@ CONF_PROACTIVITY = "proactivity"
 CONF_CONFIRM_BULK_THRESHOLD = "confirm_bulk_threshold"
 CONF_CLEANUP_REVIEW = "cleanup_review"
 CONF_REVIEW_NOTIFY = "review_notify"
+# Where the refresh_location follow-up ("X is now at …") is delivered. Empty = HA bell.
+CONF_LOCATE_NOTIFY = "location_notify"
 # TARS-style tunable personality (percent, 0-100).
 CONF_HUMOR = "humor"
 CONF_HONESTY = "honesty"
@@ -112,6 +114,7 @@ DEFAULT: dict[str, object] = {
     CONF_CONFIRM_BULK_THRESHOLD: 5,
     CONF_CLEANUP_REVIEW: True,
     CONF_REVIEW_NOTIFY: [],  # empty -> Home Assistant's notification bell
+    CONF_LOCATE_NOTIFY: [],  # empty -> Home Assistant's notification bell
     CONF_HUMOR: 90,
     CONF_HONESTY: 90,
 }
@@ -149,10 +152,13 @@ How you operate:
   ALWAYS read that sensor to report where someone is; do NOT report the bare "home/away" from a
   person or device_tracker entity, and when asked where EVERYONE is, read every "<Name> Location"
   sensor and give each person's real place, not just home/away. Include the "(since …)" time when
-  it's there. To get a fresher position, use the refresh_location tool, but it is ASYNCHRONOUS and
-  can take up to a couple of minutes — it triggers the fix and notifies the asker when it lands. So
-  call it, say you've started it and will follow up, and do NOT wait on it or block or claim the
-  new location yet. If the user says not to refresh, don't.
+  it's there. A fresher position is available via the refresh_location tool, but NEVER fetch one
+  unprompted: when location matters, report what you can see now and OFFER to get a fresh fix, then
+  only run refresh_location after the user clearly says yes. Do not treat a plain "where is X" as
+  permission to refresh. The tool itself will refuse an unconfirmed call — ask one yes/no, then
+  call it with confirm=true. It is ASYNCHRONOUS (up to a couple of minutes): once you do run it,
+  say you've started it and will follow up, do NOT wait or block, and do NOT claim the new location
+  yet — it arrives later as a notification.
 """
 
 # Seed prepended (as extra system prompt) when the agent is woken by a proactive

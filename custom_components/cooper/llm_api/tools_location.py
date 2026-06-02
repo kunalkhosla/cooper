@@ -30,7 +30,7 @@ from ..const import (
     LOCATE_TIMEOUT,
     LOGGER,
 )
-from ..guardrails import CooperTool
+from ..guardrails import CooperTool, audit
 
 # Payload the Home Assistant companion app interprets as "send me a fresh GPS fix now".
 _COMPANION_REFRESH_MESSAGE = "request_location_update"
@@ -51,13 +51,19 @@ async def _trigger_refresh(hass: HomeAssistant, refresh: str) -> None:
         raise ValueError(f"Don't know how to refresh via '{refresh}'")
 
 
-async def _notify(hass: HomeAssistant, target: str, message: str) -> None:
-    """Deliver the follow-up to a notify.* service or persistent_notification.create."""
-    domain, service = target.split(".", 1)
-    data: dict[str, Any] = {"message": message}
-    if domain == "persistent_notification":
-        data["title"] = "Cooper — location"
-    await hass.services.async_call(domain, service, data, blocking=False)
+async def _notify_all(
+    hass: HomeAssistant, targets: list[str], message: str
+) -> None:
+    """Deliver the follow-up to every configured notify.* / persistent_notification target."""
+    for target in targets:
+        domain, service = target.split(".", 1)
+        data: dict[str, Any] = {"message": message}
+        if domain == "persistent_notification":
+            data["title"] = "Cooper — location"
+        try:
+            await hass.services.async_call(domain, service, data, blocking=False)
+        except Exception as err:  # noqa: BLE001 - one bad target must not lose the rest
+            LOGGER.warning("cooper: location notify to %s failed: %s", target, err)
 
 
 async def _watch_and_notify(
@@ -66,7 +72,7 @@ async def _watch_and_notify(
     watch_entity: str,
     place_entity: str,
     baseline_updated: Any,
-    notify_target: str,
+    notify_targets: list[str],
 ) -> None:
     """Wait (≤ LOCATE_TIMEOUT) for a fresh fix to land, then notify the caller."""
     loop = hass.loop
@@ -86,9 +92,9 @@ async def _watch_and_notify(
     try:
         await asyncio.wait_for(fut, timeout=LOCATE_TIMEOUT)
     except asyncio.TimeoutError:
-        await _notify(
+        await _notify_all(
             hass,
-            notify_target,
+            notify_targets,
             f"Still no fresh location fix for {person.title()} after "
             f"{LOCATE_TIMEOUT // 60} minutes.",
         )
@@ -106,7 +112,7 @@ async def _watch_and_notify(
         if where
         else f"Got a fresh location fix for {person.title()}."
     )
-    await _notify(hass, notify_target, message)
+    await _notify_all(hass, notify_targets, message)
 
 
 class RefreshLocationTool(CooperTool):
@@ -115,21 +121,22 @@ class RefreshLocationTool(CooperTool):
     name = "refresh_location"
     description = (
         "Force a fresh, current GPS fix for one or more family members (kunal, sara, shuchi, "
-        "vir). This is ASYNCHRONOUS: it triggers the refresh and returns immediately, then "
-        "sends a notification a few seconds to ~2 minutes later when the fresh location lands "
-        "(or times out). Use it when the user wants someone's CURRENT location, not the "
-        "last-known one. Pass notify_target as the notify.* service for the person asking "
-        "(e.g. notify.mobile_app_pixel_10_pro) so the follow-up reaches them; if omitted it "
-        "goes to the Home Assistant notification bell. Tell the user you've started it and "
-        "will follow up — do not claim to have the new location yet. If the user says not to "
-        "refresh, don't call this."
+        "vir). Use it ONLY when the user wants someone's CURRENT location, not the last-known "
+        "one — and never unprompted. You MUST confirm first: ask one yes/no question ('Want me "
+        "to request a fresh location fix?') and only then call this with confirm=true. Do not "
+        "set confirm=true on a plain 'where is X' — that is not permission to refresh. The tool "
+        "refuses an unconfirmed call. It is ASYNCHRONOUS: once confirmed it triggers the refresh "
+        "and returns immediately, then sends a notification a few seconds to ~2 minutes later "
+        "when the fresh location lands (or times out). So tell the user you've started it and "
+        "will follow up — do NOT claim to have the new location yet. The follow-up goes to the "
+        "devices configured in Cooper's options; you don't choose where."
     )
     parameters = vol.Schema(
         {
             vol.Required("people"): vol.All(
                 [vol.In(list(LOCATE_TARGETS))], vol.Length(min=1)
             ),
-            vol.Optional("notify_target"): str,
+            vol.Optional("confirm", default=False): bool,
         }
     )
 
@@ -139,10 +146,56 @@ class RefreshLocationTool(CooperTool):
         tool_input: llm.ToolInput,
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
+        from .. import get_runtime
+
+        runtime = get_runtime(hass)
         people = list(tool_input.tool_args["people"])
-        notify_target = str(
-            tool_input.tool_args.get("notify_target") or LOCATE_DEFAULT_NOTIFY
-        )
+        confirmed = bool(tool_input.tool_args.get("confirm", False))
+
+        # Kill switch hard-stops everything; otherwise this is a benign read-style refresh
+        # that we gate only on an explicit confirmation (no observe-mode block).
+        if runtime.kill_switch:
+            audit(
+                hass,
+                runtime,
+                {
+                    "tool": self.name,
+                    "base": self.name,
+                    "args": {"people": people},
+                    "tier": "CONFIRM",
+                    "decision": "refused_kill_switch",
+                    "observe": runtime.observe_mode,
+                    "kill": runtime.kill_switch,
+                },
+            )
+            return {
+                "status": "refused",
+                "reason": "Cooper's kill switch is on; no location refresh was triggered.",
+            }
+        if not confirmed:
+            audit(
+                hass,
+                runtime,
+                {
+                    "tool": self.name,
+                    "base": self.name,
+                    "args": {"people": people},
+                    "tier": "CONFIRM",
+                    "decision": "needs_confirmation",
+                    "observe": runtime.observe_mode,
+                    "kill": runtime.kill_switch,
+                },
+            )
+            return {
+                "status": "needs_confirmation",
+                "summary": f"request a fresh location fix for {', '.join(people)}",
+                "instructions": (
+                    "Ask the user a single yes/no question to confirm the refresh. If they "
+                    "agree, call refresh_location again with the same people and confirm=true."
+                ),
+            }
+
+        notify_targets = list(runtime.location_notify) or [LOCATE_DEFAULT_NOTIFY]
 
         started: list[str] = []
         problems: list[dict[str, str]] = []
@@ -169,19 +222,34 @@ class RefreshLocationTool(CooperTool):
                     watch_entity,
                     cfg["place"],
                     baseline_updated,
-                    notify_target,
+                    notify_targets,
                 ),
                 name=f"cooper_locate_{person}",
             )
             started.append(person)
 
+        audit(
+            hass,
+            runtime,
+            {
+                "tool": self.name,
+                "base": self.name,
+                "args": {"people": people},
+                "tier": "CONFIRM",
+                "decision": "confirmed" if started else "no_targets",
+                "observe": runtime.observe_mode,
+                "kill": runtime.kill_switch,
+                "result": {"started": started, "follow_up": notify_targets},
+            },
+        )
         return {
             "status": "refreshing" if started else "failed",
             "started": started,
             "problems": problems,
-            "follow_up": notify_target,
+            "follow_up": notify_targets,
             "note": (
-                "Refresh started; a fresh location will be sent to the notify target within "
-                f"~{LOCATE_TIMEOUT // 60} minutes. Do not state the new location yet."
+                "Refresh started; a fresh location will be sent to the configured notify "
+                f"device(s) within ~{LOCATE_TIMEOUT // 60} minutes. Do not state the new "
+                "location yet."
             ),
         }

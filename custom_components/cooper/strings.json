@@ -54,6 +54,7 @@
             "confirm_bulk_threshold": "Confirm when acting on more than this many entities",
             "cleanup_review": "Weekly cleanup review",
             "review_notify": "Cleanup review — notify devices",
+            "location_notify": "Location refresh — notify devices",
             "humor": "Humor",
             "honesty": "Honesty"
           },
@@ -62,6 +63,7 @@
             "thinking_budget": "Higher values let Claude reason longer but add latency; keep low for voice.",
             "cleanup_review": "Once a week, Cooper reviews the automations and scripts it authored and asks whether to delete any that look unused. It never deletes on its own.",
             "review_notify": "Where the review's \"want me to delete these?\" message is sent. Pick one or more notify devices, or leave empty for Home Assistant's notification bell.",
+            "location_notify": "Where the follow-up from a location refresh (\"X is now at …\") is sent. Pick one or more notify devices (e.g. your phone), or leave empty for Home Assistant's notification bell.",
             "humor": "TARS-style humor dial (0-100%). Higher = more dry, deadpan one-liners; 0 = all business.",
             "honesty": "Candor dial (0-100%). Higher = the plain truth even when unflattering, no false reassurance."
           }
