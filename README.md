@@ -39,6 +39,39 @@ Cooper is a fresh build (not a refactor) that fixes all three at the root:
 - **Stay safe:** reversible actions run immediately; locks, alarms, garages and the like require a yes/no; a denylist is refused outright. Ships with an **observe mode** and a **kill switch**.
 - **Be proactive:** ask it to keep an eye on something and it writes a native HA automation that calls back into the agent when it fires — proactivity that survives restarts and works on any install type.
 - **Remember you:** learns and recalls your preferences across conversations.
+- **Clean up after itself:** every automation/script Cooper authors is stamped with a `cooper_` id. It can list and delete **only its own** — ask "clean up the automations you made that aren't used" and it lists them, asks, and removes the stale ones. Your hand-made automations are off-limits by construction.
+
+## Cleanup & the weekly review
+
+Cooper can prune the automations and scripts **it** authored — never yours.
+
+- `list_cooper_items` — shows every `cooper_`-stamped automation/script with its last-run time.
+- `delete_cooper_item` — deletes one, confirm-tier (it asks yes/no; blocked by observe mode / kill switch). A hard rule, enforced in code in two places, refuses any id without the `cooper_` prefix, so your own automations can't be touched.
+
+Deletion is **always on-demand and confirmed** — Cooper never auto-deletes.
+
+**Periodic review (optional).** The `cooper.review_cleanup` service wakes Cooper to scan its authored items, flag stale ones, and send you a *"want me to delete these?"* message — **suggest-only**, it deletes nothing. You confirm later in conversation. The message goes to a `notify_target` (a `notify.mobile_app_*` service for a phone push, or HA's notification bell by default).
+
+Wire up a weekly review with one automation (set the notify target to your phone):
+
+```yaml
+alias: Cooper — weekly cleanup review
+mode: single
+triggers:
+  - trigger: time
+    at: "10:00:00"
+conditions:
+  - condition: time
+    weekday: [sun]
+actions:
+  - action: cooper.review_cleanup
+    data:
+      notify_target: notify.mobile_app_your_phone   # omit for HA's notification bell
+```
+
+> Give this automation a **non-`cooper_`** id (the default UI-created id is fine) so the review can't list or delete itself.
+
+To try it now: Developer Tools → Actions → `cooper.review_cleanup` → Run.
 
 ## Install (planned)
 
