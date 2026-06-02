@@ -52,7 +52,7 @@ The key architectural bet: **let Home Assistant do the per-home grounding for us
 
 **The integration is the product. The add-on is purely additive** (a trigger source that still routes every action through the integration's guardrails). Core/Container users get the full agent + proactivity; HAOS users can add the always-on watcher.
 
-> **Naming:** repo/domain placeholder below is `ha_brain` — pick the real name before build (your house style: Cooper/Jarvis/Bellhop/Khouch). Domain must be a valid HA slug; replace `ha_brain` everywhere.
+> **Naming:** the integration domain is `cooper` (used for `custom_components/cooper/`, services such as `cooper.proactive_check`, and the add-on id). It must be a valid HA slug. (Older sections below may still say `ha_brain`; treat that as `cooper`.)
 
 ---
 
@@ -160,10 +160,10 @@ custom_components/ha_brain/
 
 ---
 
-## Verification plan (real HAOS at 192.168.0.194, side-by-side, non-disruptive)
+## Verification plan (real Home Assistant OS, side-by-side, non-disruptive)
 
 Principle: **never touch the default agent/pipeline.** Use a separate test agent + test pipeline.
-1. Copy `custom_components/ha_brain/` to `/config/custom_components/` (SSH add-on port 22220 / Samba), restart, add integration with your key.
+1. Copy `custom_components/cooper/` to `/config/custom_components/` (via the SSH or Samba add-on), restart, add integration with your key.
 2. New Assist pipeline "Brain Test" → conversation agent = HA Brain. Default stays default.
 3. **Grounding proof (observe on):** `POST /api/conversation/process {text, agent_id}` (or the HA MCP tools) → ask "what lights are in the living room?" — answer must reflect *this* home with zero hardcoding.
 4. **Custom tools:** history ("when did the front door last open?"), vision ("what's on the driveway camera?"), web search.

@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+
+# Home Assistant / local test artifacts
+secrets.yaml
+.HA_VERSION
+home-assistant.log*
+
+# Local-only notes that may contain home-specific details (never commit)
+*.local.md
+docs/*.local.md
+
+# OS
+.DS_Store
+Thumbs.db
