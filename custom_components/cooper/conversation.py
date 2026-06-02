@@ -8,6 +8,7 @@ shared loop runs and we return the chat-log result.
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING
 
 from homeassistant.components import conversation
@@ -96,6 +97,28 @@ def _speech(result: conversation.ConversationResult) -> str | None:
         return None
 
 
+# The model occasionally drops the space after sentence punctuation
+# ("11 minutes.It'll…"), which makes TTS (e.g. ElevenLabs) run the sentences
+# together with no pause. Insert a space only when a word/quote/paren boundary
+# sits directly before .!? and an uppercase/quote/paren follows — so decimals
+# (3.5) and acronyms (U.S.) are left untouched.
+_SENTENCE_GAP = re.compile(r"([a-z0-9)\]\"’'])([.!?])([A-Z\"“‘(])")
+
+
+def _normalize_spacing(text: str) -> str:
+    return _SENTENCE_GAP.sub(r"\1\2 \3", text) if text else text
+
+
+def _fix_result_spacing(result: conversation.ConversationResult) -> None:
+    """Normalise sentence spacing in the spoken/displayed reply, in place."""
+    try:
+        speech = result.response.speech["plain"]["speech"]
+    except (AttributeError, KeyError, TypeError):
+        return
+    if isinstance(speech, str):
+        result.response.speech["plain"]["speech"] = _normalize_spacing(speech)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     config_entry: ConfigEntry,
@@ -170,5 +193,6 @@ class CooperConversationEntity(
         _log.turn_start(user_input.text, _mode_tag(self.runtime))
         rounds = await self._async_handle_chat_log(chat_log)
         result = conversation.async_get_result_from_chat_log(user_input, chat_log)
+        _fix_result_spacing(result)
         _log.turn_end(_speech(result), rounds=rounds)
         return result
