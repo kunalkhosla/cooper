@@ -50,26 +50,21 @@ Cooper can prune the automations and scripts **it** authored — never yours.
 
 Deletion is **always on-demand and confirmed** — Cooper never auto-deletes.
 
-**Periodic review (optional).** The `cooper.review_cleanup` service wakes Cooper to scan its authored items, flag stale ones, and send you a *"want me to delete these?"* message — **suggest-only**, it deletes nothing. You confirm later in conversation. The message goes to a `notify_target` (a `notify.mobile_app_*` service for a phone push, or HA's notification bell by default).
+**Weekly review — built in, no automation needed.** Cooper runs a cleanup review once a week on its own (Sunday morning): it scans its authored items, flags stale ones, and sends you a *"want me to delete these?"* message — **suggest-only**, it deletes nothing. You confirm later in conversation. Configure it in the agent's options:
 
-Wire up a weekly review with one automation (set the notify target to your phone):
+- **Weekly cleanup review** — turn the review on/off (on by default).
+- **Cleanup review — notify devices** — pick one or more `notify.*` devices for the message (a phone push); leave empty for Home Assistant's notification bell.
+
+Prefer a custom schedule or trigger? The review is just the `cooper.review_cleanup` service — call it from your own automation:
 
 ```yaml
-alias: Cooper — weekly cleanup review
-mode: single
-triggers:
-  - trigger: time
-    at: "10:00:00"
-conditions:
-  - condition: time
-    weekday: [sun]
 actions:
   - action: cooper.review_cleanup
     data:
-      notify_target: notify.mobile_app_your_phone   # omit for HA's notification bell
+      notify_target: [notify.mobile_app_your_phone]   # omit for the notification bell
 ```
 
-> Give this automation a **non-`cooper_`** id (the default UI-created id is fine) so the review can't list or delete itself.
+> If you wrap it in your own automation, give that automation a **non-`cooper_`** id so the review can't list or delete itself.
 
 To try it now: Developer Tools → Actions → `cooper.review_cleanup` → Run.
 

@@ -35,10 +35,12 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_CHAT_MODEL,
+    CONF_CLEANUP_REVIEW,
     CONF_CONFIRM_BULK_THRESHOLD,
     CONF_MAX_TOKENS,
     CONF_OBSERVE_MODE,
     CONF_PROACTIVITY,
+    CONF_REVIEW_NOTIFY,
     CONF_PROMPT,
     CONF_PROMPT_CACHING,
     CONF_RECOMMENDED,
@@ -251,6 +253,24 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
                     ),
                 ): BooleanSelector(),
                 vol.Required(
+                    CONF_CLEANUP_REVIEW,
+                    default=self._options.get(
+                        CONF_CLEANUP_REVIEW, DEFAULT[CONF_CLEANUP_REVIEW]
+                    ),
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_REVIEW_NOTIFY,
+                    default=self._options.get(
+                        CONF_REVIEW_NOTIFY, DEFAULT[CONF_REVIEW_NOTIFY]
+                    ),
+                ): SelectSelector(
+                    SelectSelectorConfig(
+                        options=self._notify_options(),
+                        multiple=True,
+                        custom_value=True,
+                    )
+                ),
+                vol.Required(
                     CONF_CONFIRM_BULK_THRESHOLD,
                     default=self._options.get(
                         CONF_CONFIRM_BULK_THRESHOLD,
@@ -260,6 +280,23 @@ class ConversationSubentryFlowHandler(ConfigSubentryFlow):
             }
         )
         return self.async_show_form(step_id="advanced", data_schema=schema)
+
+    def _notify_options(self) -> list[SelectOptionDict]:
+        """Notify targets for the cleanup review: the HA bell + every notify.* service.
+
+        custom_value is on, so a notify group or any target can also be typed.
+        """
+        options = [
+            SelectOptionDict(
+                label="Home Assistant notification bell",
+                value="persistent_notification.create",
+            )
+        ]
+        for name in sorted(self.hass.services.async_services().get("notify", {})):
+            options.append(
+                SelectOptionDict(label=f"notify.{name}", value=f"notify.{name}")
+            )
+        return options
 
     def _model_options(self) -> list[SelectOptionDict]:
         entry = self._get_entry()

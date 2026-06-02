@@ -27,6 +27,12 @@ CONF_WEB_SEARCH_MAX_USES = "web_search_max_uses"
 CONF_OBSERVE_MODE = "observe_mode"
 CONF_PROACTIVITY = "proactivity"
 CONF_CONFIRM_BULK_THRESHOLD = "confirm_bulk_threshold"
+CONF_CLEANUP_REVIEW = "cleanup_review"
+CONF_REVIEW_NOTIFY = "review_notify"
+
+# Weekly cleanup-review schedule (local time). Mon=0 … Sun=6.
+REVIEW_WEEKDAY = 6
+REVIEW_HOUR = 10
 
 # Service names.
 SERVICE_PROACTIVE_CHECK = "proactive_check"
@@ -67,6 +73,8 @@ DEFAULT: dict[str, object] = {
     CONF_OBSERVE_MODE: True,
     CONF_PROACTIVITY: True,
     CONF_CONFIRM_BULK_THRESHOLD: 5,
+    CONF_CLEANUP_REVIEW: True,
+    CONF_REVIEW_NOTIFY: [],  # empty -> Home Assistant's notification bell
 }
 
 # Short, principle-based persona. Intelligence comes from the model reasoning over

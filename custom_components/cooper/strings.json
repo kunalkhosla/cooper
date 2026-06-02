@@ -51,11 +51,15 @@
             "web_search_max_uses": "Max web searches per turn",
             "observe_mode": "Start in observe mode",
             "proactivity": "Allow proactivity",
-            "confirm_bulk_threshold": "Confirm when acting on more than this many entities"
+            "confirm_bulk_threshold": "Confirm when acting on more than this many entities",
+            "cleanup_review": "Weekly cleanup review",
+            "review_notify": "Cleanup review — notify devices"
           },
           "data_description": {
             "observe_mode": "In observe mode Cooper says what it would do but changes nothing. Recommended for a new home.",
-            "thinking_budget": "Higher values let Claude reason longer but add latency; keep low for voice."
+            "thinking_budget": "Higher values let Claude reason longer but add latency; keep low for voice.",
+            "cleanup_review": "Once a week, Cooper reviews the automations and scripts it authored and asks whether to delete any that look unused. It never deletes on its own.",
+            "review_notify": "Where the review's \"want me to delete these?\" message is sent. Pick one or more notify devices, or leave empty for Home Assistant's notification bell."
           }
         }
       },

@@ -16,12 +16,19 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_API_KEY, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
+from homeassistant.helpers.event import async_track_time_change
 
 from .const import (
+    CONF_CLEANUP_REVIEW,
     CONF_CONFIRM_BULK_THRESHOLD,
     CONF_OBSERVE_MODE,
+    CONF_REVIEW_NOTIFY,
     DEFAULT,
     DOMAIN,
+    LOGGER,
+    REVIEW_HOUR,
+    REVIEW_WEEKDAY,
+    SERVICE_REVIEW_CLEANUP,
     SUBENTRY_TYPE_CONVERSATION,
 )
 from . import _log
@@ -109,6 +116,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: CooperConfigEntry) -> bo
     if not domain_data["services_registered"]:
         async_setup_services(hass)
         domain_data["services_registered"] = True
+
+    # Self-scheduled weekly cleanup review (suggest-only) — no user automation needed.
+    # Reads the notify target(s) live from the subentry, so a reconfigure takes effect.
+    review_enabled = _seed_subentry_value(entry, CONF_CLEANUP_REVIEW)
+    if review_enabled is None:
+        review_enabled = DEFAULT[CONF_CLEANUP_REVIEW]
+    if review_enabled:
+
+        async def _weekly_review(now: Any) -> None:
+            if now.weekday() != REVIEW_WEEKDAY:
+                return
+            targets = _seed_subentry_value(entry, CONF_REVIEW_NOTIFY) or []
+            LOGGER.info(
+                "cooper: weekly cleanup review firing (targets=%s)",
+                targets or "notification bell",
+            )
+            data = {"notify_target": targets} if targets else {}
+            await hass.services.async_call(
+                DOMAIN, SERVICE_REVIEW_CLEANUP, data, blocking=False
+            )
+
+        entry.async_on_unload(
+            async_track_time_change(
+                hass, _weekly_review, hour=REVIEW_HOUR, minute=0, second=0
+            )
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

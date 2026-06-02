@@ -55,7 +55,9 @@ SET_OBSERVE_MODE_SCHEMA = vol.Schema({vol.Required(ATTR_OBSERVE): cv.boolean})
 KILL_SWITCH_SCHEMA = vol.Schema({vol.Required(ATTR_ENABLED): cv.boolean})
 REVIEW_CLEANUP_SCHEMA = vol.Schema(
     {
-        vol.Optional(ATTR_NOTIFY_TARGET): cv.string,
+        # One or more notify services (e.g. notify.mobile_app_*). A bare string is
+        # accepted and wrapped, so the legacy single-target call still works.
+        vol.Optional(ATTR_NOTIFY_TARGET): vol.All(cv.ensure_list, [cv.string]),
         vol.Optional(ATTR_AGENT_ID): cv.string,
         vol.Optional(ATTR_CONVERSATION_ID): cv.string,
     }
@@ -139,28 +141,41 @@ def async_setup_services(hass: HomeAssistant) -> None:
             LOGGER.warning("review_cleanup: no Cooper conversation agent found")
             return
 
-        result = await conversation.async_converse(
-            hass,
-            text="Run your periodic cleanup review of the automations and scripts you authored.",
-            conversation_id=call.data.get(ATTR_CONVERSATION_ID),
-            context=call.context,
-            language=hass.config.language,
-            agent_id=agent_id,
-            extra_system_prompt=REVIEW_SEED,
-        )
+        LOGGER.info("review_cleanup: running cleanup review (agent %s)", agent_id)
+        try:
+            result = await conversation.async_converse(
+                hass,
+                text="Run your periodic cleanup review of the automations and scripts you authored.",
+                conversation_id=call.data.get(ATTR_CONVERSATION_ID),
+                context=call.context,
+                language=hass.config.language,
+                agent_id=agent_id,
+                extra_system_prompt=REVIEW_SEED,
+            )
+        except Exception as err:  # noqa: BLE001 - surface, don't crash the scheduler
+            LOGGER.error("review_cleanup: agent review failed: %s", err)
+            return
 
         speech = result.response.speech.get("plain", {}).get("speech", "").strip()
         if not speech:
-            LOGGER.debug("review_cleanup: nothing worth surfacing")
+            LOGGER.info("review_cleanup: nothing stale to surface; no notification sent")
             return
-        target = call.data.get(ATTR_NOTIFY_TARGET) or DEFAULT_REVIEW_NOTIFY
-        if "." not in target:
-            return
-        domain, service = target.split(".", 1)
-        data: dict[str, str] = {"message": speech}
-        if domain == "persistent_notification":
-            data["title"] = "Cooper: cleanup review"
-        await hass.services.async_call(domain, service, data, blocking=False)
+        targets = call.data.get(ATTR_NOTIFY_TARGET) or [DEFAULT_REVIEW_NOTIFY]
+        LOGGER.info(
+            "review_cleanup: surfacing review (%d chars) to %s", len(speech), targets
+        )
+        for target in targets:
+            if "." not in target:
+                LOGGER.warning("review_cleanup: skipping malformed notify target %r", target)
+                continue
+            domain, service = target.split(".", 1)
+            data: dict[str, str] = {"message": speech}
+            if domain == "persistent_notification":
+                data["title"] = "Cooper: cleanup review"
+            try:
+                await hass.services.async_call(domain, service, data, blocking=False)
+            except Exception as err:  # noqa: BLE001
+                LOGGER.warning("review_cleanup: notify %s failed: %s", target, err)
 
     async def handle_set_observe_mode(call: ServiceCall) -> None:
         observe = call.data[ATTR_OBSERVE]
