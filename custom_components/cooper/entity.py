@@ -104,12 +104,17 @@ class CooperBaseLLMEntity(CoordinatorEntity[CooperCoordinator]):
             thinking_budget=int(self._opt(CONF_THINKING_BUDGET) or 0),
         )
 
-    async def _async_handle_chat_log(self, chat_log: conversation.ChatLog) -> None:
-        """Stream turns until the model stops calling tools (bounded)."""
+    async def _async_handle_chat_log(self, chat_log: conversation.ChatLog) -> int:
+        """Stream turns until the model stops calling tools (bounded).
+
+        Returns the number of model rounds it took (for the turn-end log footer).
+        """
         provider = self.runtime.provider
         model_args = self._get_model_args(chat_log)
 
+        rounds = 0
         for _iteration in range(MAX_TOOL_ITERATIONS):
+            rounds += 1
             stream = await provider.create_stream(model_args)
             new_content = [
                 content
@@ -120,3 +125,4 @@ class CooperBaseLLMEntity(CoordinatorEntity[CooperCoordinator]):
             model_args["messages"].extend(convert_content(new_content))
             if not chat_log.unresponded_tool_results:
                 break
+        return rounds

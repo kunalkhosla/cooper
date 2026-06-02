@@ -1,5 +1,5 @@
 name: Cooper Watcher
-version: "0.1.0"
+version: "0.1.1"
 slug: cooper_watcher
 description: >-
   Optional always-on watcher for HAOS/Supervisor. Does cheap local work the event bus

@@ -24,6 +24,7 @@ from .const import (
     DOMAIN,
     SUBENTRY_TYPE_CONVERSATION,
 )
+from . import _log
 from .coordinator import CooperCoordinator
 from .guardrails import PendingConfirmations
 from .memory import MemoryStore
@@ -75,6 +76,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: CooperConfigEntry) -> bo
     domain_data = hass.data.setdefault(
         DOMAIN, {"runtimes": {}, "api_registered": False, "services_registered": False}
     )
+
+    # Cooper's own capped, rotating, colourised activity log (idempotent).
+    _log.install_file_handler(hass)
 
     api_key = entry.data[CONF_API_KEY]
     provider = AnthropicProvider(hass, api_key)
@@ -132,9 +136,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: CooperConfigEntry) -> b
     domain_data = hass.data.get(DOMAIN, {})
     domain_data.get("runtimes", {}).pop(entry.entry_id, None)
 
-    # When the last entry goes away, tear down the global services.
+    # When the last entry goes away, tear down the global services + log handler.
     if not domain_data.get("runtimes") and domain_data.get("services_registered"):
         async_unload_services(hass)
+        _log.remove_file_handler()
         domain_data["services_registered"] = False
         # The LLM API has no public unregister; it is harmless to leave registered,
         # and re-registering is guarded, so leave api_registered as-is.

@@ -26,6 +26,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import intent, llm
 from homeassistant.util.json import JsonObjectType
 
+from . import _log
 from .const import EVENT_TOOL_EXECUTED, LOGGER
 
 if TYPE_CHECKING:
@@ -291,11 +292,47 @@ class GuardedTool(llm.Tool):
         return await self._inner.async_call(hass, tool_input, llm_context)
 
 
+class LoggedTool(llm.Tool):
+    """Narrates a tool's call + result to Cooper's activity log, then delegates.
+
+    Sits *outside* GuardedTool/CooperTool so it captures the user-visible call
+    signature and the final result for **every** tool — including read-only ones
+    (history, vision, recall) that never write an audit record. This is what brings
+    back v1's per-tool ``call(args) -> result`` narration.
+    """
+
+    def __init__(self, inner: llm.Tool) -> None:
+        self._inner = inner
+        # Mirror the schema the model/chat-log routing sees.
+        self.name = inner.name
+        self.description = inner.description
+        self.parameters = inner.parameters
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        base = base_name(self.name)
+        try:
+            result = await self._inner.async_call(hass, tool_input, llm_context)
+        except Exception as err:  # noqa: BLE001 - narrate, then let HA's loop handle it
+            _log.tool_call(base, tool_input.tool_args, {"error": str(err)})
+            raise
+        _log.tool_call(base, tool_input.tool_args, result)
+        return result
+
+
 @callback
 def wrap_tools(
     hass: HomeAssistant, chat_log: conversation.ChatLog, runtime: CooperRuntime
 ) -> None:
-    """Replace action tools in the resolved LLM API with GuardedTool wrappers."""
+    """Replace action tools with GuardedTool wrappers; narrate every tool.
+
+    Each tool is then wrapped once more in ``LoggedTool`` so its call and result land
+    in cooper.log / home-assistant.log (the Log Viewer add-on).
+    """
     if chat_log.llm_api is None:
         return
 
@@ -303,16 +340,17 @@ def wrap_tools(
     for tool in chat_log.llm_api.tools:
         real = _unwrap(tool)
         if isinstance(real, CooperTool):
-            wrapped.append(tool)  # tiers itself
+            guarded: llm.Tool = tool  # tiers itself
         elif isinstance(real, llm.ScriptTool):
-            wrapped.append(
-                GuardedTool(tool, real, runtime, chat_log.conversation_id, "script")
+            guarded = GuardedTool(
+                tool, real, runtime, chat_log.conversation_id, "script"
             )
         elif isinstance(real, llm.IntentTool) and real.name in ACTION_INTENTS:
-            wrapped.append(
-                GuardedTool(tool, real, runtime, chat_log.conversation_id, "intent")
+            guarded = GuardedTool(
+                tool, real, runtime, chat_log.conversation_id, "intent"
             )
         else:
-            wrapped.append(tool)  # read-only / unknown → pass through
+            guarded = tool  # read-only / unknown → pass through
+        wrapped.append(LoggedTool(guarded))
 
     chat_log.llm_api.tools = wrapped

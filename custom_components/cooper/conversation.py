@@ -16,7 +16,7 @@ from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
-from . import guardrails
+from . import _log, guardrails
 from .const import (
     CONF_PROMPT,
     COOPER_PERSONA_PROMPT,
@@ -53,6 +53,21 @@ def _mode_status(runtime: CooperRuntime) -> str:
         "actions run immediately; risky ones (locks, alarms, garages, bulk changes) require "
         "a spoken yes/no confirmation, which you must honor."
     )
+
+
+def _mode_tag(runtime: CooperRuntime) -> str:
+    """Short safety-mode tag for the turn-header log line."""
+    if runtime.kill_switch:
+        return "KILL"
+    return "OBSERVE" if runtime.observe_mode else "ACT"
+
+
+def _speech(result: conversation.ConversationResult) -> str | None:
+    """Pull the spoken reply text out of a conversation result, if any."""
+    try:
+        return result.response.speech["plain"]["speech"]
+    except (AttributeError, KeyError, TypeError):
+        return None
 
 
 async def async_setup_entry(
@@ -118,5 +133,8 @@ class CooperConversationEntity(
             block for block in (_mode_status(self.runtime), memory) if block
         )
 
-        await self._async_handle_chat_log(chat_log)
-        return conversation.async_get_result_from_chat_log(user_input, chat_log)
+        _log.turn_start(user_input.text, _mode_tag(self.runtime))
+        rounds = await self._async_handle_chat_log(chat_log)
+        result = conversation.async_get_result_from_chat_log(user_input, chat_log)
+        _log.turn_end(_speech(result), rounds=rounds)
+        return result
