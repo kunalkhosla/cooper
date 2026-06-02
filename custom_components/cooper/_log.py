@@ -72,6 +72,8 @@ _TOOL_EMOJI = {
     "recall": "🧠",
     "forget": "🧠",
     "author_automation": "🤖",
+    "list_cooper_items": "📋",
+    "delete_cooper_item": "🗑",
     "create_watch": "👁",
     "list_watches": "👁",
     "remove_watch": "👁",

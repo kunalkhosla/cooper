@@ -14,6 +14,7 @@ from homeassistant.helpers import llm
 from ..const import DOMAIN
 from .tools_automation import AuthorAutomationTool
 from .tools_history import HistoryTool
+from .tools_lifecycle import ListAuthoredTool, RemoveAuthoredTool
 from .tools_memory import ForgetTool, RecallTool, RememberTool
 from .tools_proactivity import CreateWatchTool, ListWatchesTool, RemoveWatchTool
 from .tools_vision import VisionTool
@@ -23,7 +24,11 @@ COOPER_API_PROMPT = (
     "camera and describe it, query an entity's recent history, remember and recall the "
     "user's lasting preferences, author native automations and scripts (including timed, "
     "sequenced ones), and set up proactive watches that wake you when something happens. "
-    "Prefer authoring a durable automation/script over promising to do something later."
+    "Prefer authoring a durable automation/script over promising to do something later. "
+    "To tidy up, list_cooper_items shows the automations and scripts you authored and "
+    "delete_cooper_item removes one — you can only ever delete your own (cooper_) items, "
+    "never the user's, so when asked to clean up old automations, list first then remove "
+    "the unneeded ones with confirmation."
 )
 
 
@@ -43,6 +48,8 @@ class CooperAPI(llm.API):
             RecallTool(),
             ForgetTool(),
             AuthorAutomationTool(),
+            ListAuthoredTool(),
+            RemoveAuthoredTool(),
             CreateWatchTool(),
             ListWatchesTool(),
             RemoveWatchTool(),

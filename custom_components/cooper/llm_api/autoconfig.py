@@ -19,6 +19,7 @@ from typing import Any
 import yaml
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import slugify, ulid as ulid_util
 
 from ..const import AUTHORED_ALIAS_PREFIX, AUTHORED_PREFIX
@@ -83,6 +84,30 @@ def _remove_automation_sync(path: str, config_id: str) -> bool:
     return True
 
 
+def _remove_script_sync(path: str, object_id: str) -> bool:
+    data = _read_yaml(path, {})
+    if not isinstance(data, dict) or object_id not in data:
+        return False
+    del data[object_id]
+    _write_yaml(path, data)
+    return True
+
+
+def _automation_entity_id(hass: HomeAssistant, config_id: str) -> str:
+    """Real entity_id for an authored automation.
+
+    HA derives an automation's entity_id from its alias (slugified), not from the
+    config ``id``; it registers the entity with ``unique_id == id``. So after a reload
+    we look the entity up by unique_id. Falls back to ``automation.<id>`` if not found
+    yet (e.g. registry not populated), which is only used as a best-effort handle.
+    """
+    registry = er.async_get(hass)
+    for entry in registry.entities.values():
+        if entry.domain == "automation" and entry.unique_id == config_id:
+            return entry.entity_id
+    return f"automation.{config_id}"
+
+
 async def async_save_automation(
     hass: HomeAssistant, config: dict[str, Any]
 ) -> str:
@@ -93,7 +118,9 @@ async def async_save_automation(
     path = hass.config.path(AUTOMATIONS_FILE)
     await hass.async_add_executor_job(partial(_save_automation_sync, path, config))
     await hass.services.async_call("automation", "reload", blocking=True)
-    return f"automation.{config_id}"
+    # entity_id is alias-slugified, not automation.<id> — resolve the real one so
+    # callers (e.g. run_now's trigger) target the entity that actually exists.
+    return _automation_entity_id(hass, config_id)
 
 
 async def async_save_script(
@@ -112,13 +139,35 @@ async def async_save_script(
 
 
 async def async_remove_automation(hass: HomeAssistant, config_id: str) -> bool:
-    """Remove an authored automation by id and reload. Returns True if removed."""
+    """Remove an authored automation by id and reload. Returns True if removed.
+
+    Storage-layer hard gate: refuses any id not stamped with ``AUTHORED_PREFIX`` so
+    Cooper can never delete a user's hand-made automation, even if a caller asks it to.
+    """
+    if not str(config_id).startswith(AUTHORED_PREFIX):
+        return False
     path = hass.config.path(AUTOMATIONS_FILE)
     removed = await hass.async_add_executor_job(
         partial(_remove_automation_sync, path, config_id)
     )
     if removed:
         await hass.services.async_call("automation", "reload", blocking=True)
+    return removed
+
+
+async def async_remove_script(hass: HomeAssistant, object_id: str) -> bool:
+    """Remove an authored script by object id and reload. Returns True if removed.
+
+    Same storage-layer hard gate as automations: only ``AUTHORED_PREFIX`` keys go.
+    """
+    if not str(object_id).startswith(AUTHORED_PREFIX):
+        return False
+    path = hass.config.path(SCRIPTS_FILE)
+    removed = await hass.async_add_executor_job(
+        partial(_remove_script_sync, path, object_id)
+    )
+    if removed:
+        await hass.services.async_call("script", "reload", blocking=True)
     return removed
 
 
@@ -135,3 +184,18 @@ async def async_list_authored_automations(
         for item in data
         if isinstance(item, dict) and str(item.get("id", "")).startswith(AUTHORED_PREFIX)
     ]
+
+
+async def async_list_authored_scripts(
+    hass: HomeAssistant,
+) -> dict[str, dict[str, Any]]:
+    """Return ``{object_id: config}`` for every Cooper-authored script."""
+    path = hass.config.path(SCRIPTS_FILE)
+    data = await hass.async_add_executor_job(partial(_read_yaml, path, {}))
+    if not isinstance(data, dict):
+        return {}
+    return {
+        key: value
+        for key, value in data.items()
+        if str(key).startswith(AUTHORED_PREFIX) and isinstance(value, dict)
+    }
