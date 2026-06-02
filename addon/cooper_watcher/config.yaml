@@ -1,0 +1,29 @@
+name: Cooper v2 Watcher
+version: "0.1.0"
+slug: cooper_watcher
+description: >-
+  Optional always-on watcher for HAOS/Supervisor. Does cheap local work the event bus
+  cannot (camera motion via frame-diff, scheduled reasoning triggers) and, when a local
+  threshold is crossed, wakes Cooper by calling the cooper.proactive_check service. It
+  holds no Anthropic key and never controls the home directly — the integration owns all
+  Claude calls, guardrails, and audit.
+url: https://github.com/kunalkhosla/cooper-v2/tree/main/addon/cooper_watcher
+arch:
+  - aarch64
+  - amd64
+  - armv7
+init: false
+hassio_api: true
+homeassistant_api: true
+host_network: false
+options:
+  poll_interval: 60
+  cameras: []
+  motion_threshold: 12.0
+  daily_review_time: ""
+schema:
+  poll_interval: int(10,3600)
+  cameras:
+    - str
+  motion_threshold: float
+  daily_review_time: str?
