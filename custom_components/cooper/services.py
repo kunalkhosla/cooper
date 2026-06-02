@@ -21,8 +21,10 @@ from .const import (
     DOMAIN,
     LOGGER,
     PROACTIVE_SEED,
+    REVIEW_SEED,
     SERVICE_KILL_SWITCH,
     SERVICE_PROACTIVE_CHECK,
+    SERVICE_REVIEW_CLEANUP,
     SERVICE_SET_OBSERVE_MODE,
 )
 
@@ -51,6 +53,15 @@ PROACTIVE_CHECK_SCHEMA = vol.Schema(
 )
 SET_OBSERVE_MODE_SCHEMA = vol.Schema({vol.Required(ATTR_OBSERVE): cv.boolean})
 KILL_SWITCH_SCHEMA = vol.Schema({vol.Required(ATTR_ENABLED): cv.boolean})
+REVIEW_CLEANUP_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_NOTIFY_TARGET): cv.string,
+        vol.Optional(ATTR_AGENT_ID): cv.string,
+        vol.Optional(ATTR_CONVERSATION_ID): cv.string,
+    }
+)
+# Where the review's "want me to delete these?" message lands if none is given.
+DEFAULT_REVIEW_NOTIFY = "persistent_notification.create"
 
 
 def _resolve_agent(hass: HomeAssistant, agent_id: str | None) -> str | None:
@@ -112,6 +123,45 @@ def async_setup_services(hass: HomeAssistant) -> None:
                     domain, service, {"message": speech}, blocking=False
                 )
 
+    async def handle_review_cleanup(call: ServiceCall) -> None:
+        """Periodic, suggest-only cleanup review of Cooper-authored automations/scripts.
+
+        Wakes Cooper with REVIEW_SEED; Cooper lists its items, flags stale ones, and
+        replies with a short 'want me to delete these?' message that we forward to a
+        notify target (persistent_notification by default). It never deletes here — the
+        user confirms later in conversation, where delete_cooper_item's confirm-tier runs.
+        """
+        from . import get_runtime
+
+        get_runtime(hass)  # ensure Cooper is set up
+        agent_id = _resolve_agent(hass, call.data.get(ATTR_AGENT_ID))
+        if agent_id is None:
+            LOGGER.warning("review_cleanup: no Cooper conversation agent found")
+            return
+
+        result = await conversation.async_converse(
+            hass,
+            text="Run your periodic cleanup review of the automations and scripts you authored.",
+            conversation_id=call.data.get(ATTR_CONVERSATION_ID),
+            context=call.context,
+            language=hass.config.language,
+            agent_id=agent_id,
+            extra_system_prompt=REVIEW_SEED,
+        )
+
+        speech = result.response.speech.get("plain", {}).get("speech", "").strip()
+        if not speech:
+            LOGGER.debug("review_cleanup: nothing worth surfacing")
+            return
+        target = call.data.get(ATTR_NOTIFY_TARGET) or DEFAULT_REVIEW_NOTIFY
+        if "." not in target:
+            return
+        domain, service = target.split(".", 1)
+        data: dict[str, str] = {"message": speech}
+        if domain == "persistent_notification":
+            data["title"] = "Cooper: cleanup review"
+        await hass.services.async_call(domain, service, data, blocking=False)
+
     async def handle_set_observe_mode(call: ServiceCall) -> None:
         observe = call.data[ATTR_OBSERVE]
         for runtime in hass.data[DOMAIN]["runtimes"].values():
@@ -137,6 +187,9 @@ def async_setup_services(hass: HomeAssistant) -> None:
     hass.services.async_register(
         DOMAIN, SERVICE_KILL_SWITCH, handle_kill_switch, KILL_SWITCH_SCHEMA
     )
+    hass.services.async_register(
+        DOMAIN, SERVICE_REVIEW_CLEANUP, handle_review_cleanup, REVIEW_CLEANUP_SCHEMA
+    )
 
 
 @callback
@@ -146,5 +199,6 @@ def async_unload_services(hass: HomeAssistant) -> None:
         SERVICE_PROACTIVE_CHECK,
         SERVICE_SET_OBSERVE_MODE,
         SERVICE_KILL_SWITCH,
+        SERVICE_REVIEW_CLEANUP,
     ):
         hass.services.async_remove(DOMAIN, service)

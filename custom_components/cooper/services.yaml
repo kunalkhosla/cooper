@@ -42,3 +42,17 @@ kill_switch:
       required: true
       selector:
         boolean:
+
+review_cleanup:
+  fields:
+    notify_target:
+      example: "notify.mobile_app_phone"
+      selector:
+        text:
+    agent_id:
+      example: "conversation.cooper"
+      selector:
+        text:
+    conversation_id:
+      selector:
+        text:

@@ -32,6 +32,7 @@ CONF_CONFIRM_BULK_THRESHOLD = "confirm_bulk_threshold"
 SERVICE_PROACTIVE_CHECK = "proactive_check"
 SERVICE_SET_OBSERVE_MODE = "set_observe_mode"
 SERVICE_KILL_SWITCH = "kill_switch"
+SERVICE_REVIEW_CLEANUP = "review_cleanup"
 
 # Event fired for every guarded/audited tool execution.
 EVENT_TOOL_EXECUTED = "cooper_tool_executed"
@@ -108,4 +109,28 @@ Look at the relevant state, then decide whether anything is genuinely worth doin
 user at this moment. If nothing is worth surfacing, do nothing and say nothing. If you should
 reach the user, keep it to one short line and deliver it with the broadcast or notify tool, since
 there may be no active conversation to speak into.
+"""
+
+# Seed for the periodic cleanup review (cooper.review_cleanup). Suggest-only: Cooper
+# surfaces stale authored items and ASKS — it must not delete here. The user confirms
+# later in a normal conversation, where delete_cooper_item's confirm-tier runs.
+REVIEW_SEED = """\
+You were triggered for a periodic cleanup review of the automations and scripts that YOU
+authored. No one is talking to you right now, and this is suggest-only — you must NOT delete
+anything during this review.
+
+Do this:
+1. Call list_cooper_items to see everything you have created, with each item's last_triggered
+   time and on/off state.
+2. Decide which, if any, look no longer needed: never triggered, not triggered in a long time,
+   turned off, or clearly one-off/superseded. Be conservative — if you are unsure about an item,
+   leave it out.
+3. If nothing is worth removing, reply with an empty message (say nothing) — no notification is
+   sent.
+4. If you found candidates, reply with ONE short message that names them by their friendly name
+   and asks whether to delete them. Your reply is delivered to the user as a notification, so do
+   not call a notify/broadcast tool yourself. End by telling them they can just say "yes, delete
+   those" to you, and you'll remove them with confirmation.
+
+Never call delete_cooper_item during this review. Only list and suggest.
 """
