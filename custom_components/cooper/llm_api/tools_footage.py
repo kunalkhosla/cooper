@@ -25,6 +25,7 @@ without Reolink recordings. Read-only.
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 from datetime import datetime, timedelta
 from functools import partial
 import os
@@ -59,6 +60,7 @@ _CLUSTER_S = 15  # merge detections within this many seconds into one frame
 _TARGET_INTERVAL_S = 120  # fallback even-sampling spacing (no detection sensors)
 _FRAME_MODEL = "claude-haiku-4-5-20251001"  # cheap vision per frame
 _URL_TTL = timedelta(seconds=180)
+_CONCURRENCY = 3  # parallel clip downloads + ffmpeg + vision (gentle on the camera/CPU)
 
 
 def _parse_when(raw: str) -> datetime | None:
@@ -78,6 +80,25 @@ def _norm(text: str) -> str:
 def _write_file(fd: int, data: bytes) -> None:
     with os.fdopen(fd, "wb") as f:
         f.write(data)
+
+
+def _pick_file(files, when: datetime):
+    """Pick the recording file covering `when` (or nearest). Returns (file_id, start) or None."""
+    best = None
+    for f in files:
+        parts = f.media_content_id.split("|")
+        try:
+            fstart = datetime.strptime(parts[-2], _FILE_TS)
+            fend = datetime.strptime(parts[-1], _FILE_TS)
+        except (ValueError, IndexError):
+            continue
+        if fstart <= when < fend:
+            return (f.media_content_id, fstart)
+        if best is None or abs((fstart - when).total_seconds()) < abs(
+            (best[1] - when).total_seconds()
+        ):
+            best = (f.media_content_id, fstart)
+    return best
 
 
 def _even_samples(start: datetime, end: datetime) -> list[datetime]:
@@ -151,36 +172,76 @@ class LookAtFootageTool(CooperTool):
             picks = [(start, None)]
 
         runtime = get_runtime(hass)
-        frames: list[dict] = []
-        first_error: dict | None = None
-        clips: dict[str, str] = {}  # file_id -> downloaded temp path (reused across frames)
-        try:
-            for when, label in picks:
-                frame, shown = await self._frame_bytes(hass, camera, when, clips)
-                if isinstance(frame, dict):
-                    first_error = first_error or frame
-                    continue
+
+        # Browse each needed day's recordings ONCE (was re-walked per frame), then map
+        # each pick to its 5-minute file locally.
+        day_files: dict = {}
+        for when, _label in picks:
+            if when.date() not in day_files:
+                day_files[when.date()] = await self._day_files(hass, camera, when)
+        primary = day_files.get(start.date())
+        if isinstance(primary, dict):  # unsupported / no camera / no recordings that day
+            return primary
+
+        work = []  # (when, label, file_id, offset)
+        for when, label in picks:
+            files = day_files.get(when.date())
+            if not isinstance(files, list):
+                continue
+            picked = _pick_file(files, when)
+            if picked is None:
+                continue
+            file_id, fstart = picked
+            work.append((when, label, file_id, max(0.0, (when - fstart).total_seconds())))
+        if not work:
+            return {"status": "error", "reason": f"No recording near that time on {camera}."}
+
+        # Download each needed clip once; run download/ffmpeg/vision concurrently (bounded)
+        # so a window scan takes ~one frame's time instead of N times it.
+        clips: dict[str, str | dict | None] = {}
+        locks: dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        sem = asyncio.Semaphore(_CONCURRENCY)
+
+        async def _one(when, label, file_id, offset):
+            async with sem:
+                async with locks[file_id]:
+                    if file_id not in clips:
+                        clips[file_id] = await self._download_clip(hass, file_id)
+                path = clips.get(file_id)
+                if isinstance(path, dict):
+                    return ("err", path)
+                if not isinstance(path, str):
+                    return ("skip", None)
+                frame = await self._extract_frame(hass, path, offset)
                 if frame is None:
-                    continue
+                    return ("skip", None)
                 try:
                     desc = await runtime.provider.describe_image(
                         frame, "image/jpeg", question, model=_FRAME_MODEL
                     )
                 except Exception as err:  # noqa: BLE001
                     LOGGER.warning("footage: describe failed: %s", err)
-                    continue
-                item = {"time": shown.isoformat(timespec="seconds"), "description": desc}
+                    return ("skip", None)
+                item = {"time": when.isoformat(timespec="seconds"), "description": desc}
                 if label:
                     item["detected"] = label
-                frames.append(item)
+                return ("ok", item)
+
+        try:
+            results = await asyncio.gather(*(_one(*w) for w in work))
         finally:
             for path in clips.values():
-                try:
-                    os.unlink(path)
-                except OSError:
-                    pass
+                if isinstance(path, str):
+                    try:
+                        os.unlink(path)
+                    except OSError:
+                        pass
+
+        frames = [r[1] for r in results if r[0] == "ok"]
+        frames.sort(key=lambda f: f["time"])
 
         if not frames:
+            first_error = next((r[1] for r in results if r[0] == "err"), None)
             if first_error is not None:
                 return first_error
             return {
@@ -260,26 +321,51 @@ class LookAtFootageTool(CooperTool):
             merged = [merged[int(i * step)] for i in range(_MAX_FRAMES)]
         return merged
 
-    async def _frame_bytes(self, hass, camera, when, clips):
-        """Resolve the clip covering `when`; return (jpeg|err|None, shown_time).
+    async def _day_files(self, hass, camera, when):
+        """Browse CAM -> sub stream -> day -> files, ONCE. Returns the file list or an error dict.
 
-        The Reolink proxy rejects HTTP Range, so ffmpeg can't seek over the network
-        (input-seek -> 400 'got text/html'). Instead download the (low-res) clip whole
-        once, cache it per file, and seek the LOCAL file — fast and reliable.
+        The Reolink proxy rejects HTTP Range, so frames are pulled by downloading the (low-res
+        'sub') clip whole and seeking the LOCAL file — see _download_clip / _extract_frame.
         """
-        file_id, shown = await self._find_file(hass, camera, when)
-        if isinstance(file_id, dict):
-            return file_id, None
-        path = clips.get(file_id)
-        if path is None:
-            path = await self._download_clip(hass, file_id)
-            if isinstance(path, dict):
-                return path, None
-            if path is None:
-                return None, shown
-            clips[file_id] = path
-        offset = max(0.0, (when - shown).total_seconds())
-        return await self._extract_frame(hass, path, offset), shown
+        want = _norm(camera)
+        try:
+            root = await async_browse_media(hass, _ROOT)
+        except Exception:  # noqa: BLE001
+            return {
+                "status": "unsupported",
+                "reason": (
+                    "Recorded-footage lookup currently supports Reolink NVR recordings, and "
+                    "none were found on this Home Assistant. Live views still work via "
+                    "look_at_camera."
+                ),
+            }
+        cam = next(
+            (c for c in root.children if want in c.title.lower() or c.title.lower() in want),
+            None,
+        )
+        if cam is None:
+            names = ", ".join(c.title for c in root.children)
+            return {"status": "error", "reason": f"No camera matching '{camera}'. Have: {names}."}
+
+        # Prefer the low-res 'sub' stream — ~8 MB clips vs ~240 MB 4K, plenty to ID a
+        # person/car/animal and far cheaper to download per frame.
+        res = await async_browse_media(hass, cam.media_content_id)
+        stream = next(
+            (c for c in res.children if c.media_content_id.endswith("|sub")),
+            next(
+                (c for c in res.children if c.media_content_id.endswith("|main")),
+                res.children[0] if res.children else None,
+            ),
+        )
+        if stream is None:
+            return {"status": "error", "reason": "Camera has no recordings."}
+
+        days = await async_browse_media(hass, stream.media_content_id)
+        suffix = f"|{when.year}|{when.month}|{when.day}"
+        day = next((c for c in days.children if c.media_content_id.endswith(suffix)), None)
+        if day is None:
+            return {"status": "error", "reason": f"No recordings for {when.date()} on {cam.title}."}
+        return (await async_browse_media(hass, day.media_content_id)).children
 
     async def _download_clip(self, hass, file_id) -> str | dict | None:
         """Download a recording clip whole (no Range) to a temp file; return its path."""
@@ -311,64 +397,6 @@ class LookAtFootageTool(CooperTool):
             LOGGER.warning("footage: temp write failed: %s", err)
             return None
         return tmp
-
-    async def _find_file(self, hass, camera, when):
-        """Walk CAM -> RES(main) -> day -> file. Returns (file_id, file_start) or (err, None)."""
-        want = _norm(camera)
-        try:
-            root = await async_browse_media(hass, _ROOT)
-        except Exception:  # noqa: BLE001
-            return {
-                "status": "unsupported",
-                "reason": (
-                    "Recorded-footage lookup currently supports Reolink NVR recordings, and "
-                    "none were found on this Home Assistant. Live views still work via "
-                    "look_at_camera."
-                ),
-            }, None
-        cam = next(
-            (c for c in root.children if want in c.title.lower() or c.title.lower() in want),
-            None,
-        )
-        if cam is None:
-            names = ", ".join(c.title for c in root.children)
-            return {"status": "error", "reason": f"No camera matching '{camera}'. Have: {names}."}, None
-
-        # Prefer the low-res 'sub' stream — small clips (~8 MB vs ~240 MB), plenty for
-        # describing a person/car/animal, and far cheaper to download per frame.
-        res = await async_browse_media(hass, cam.media_content_id)
-        stream = next(
-            (c for c in res.children if c.media_content_id.endswith("|sub")),
-            next(
-                (c for c in res.children if c.media_content_id.endswith("|main")),
-                res.children[0] if res.children else None,
-            ),
-        )
-        if stream is None:
-            return {"status": "error", "reason": "Camera has no recordings."}, None
-
-        days = await async_browse_media(hass, stream.media_content_id)
-        suffix = f"|{when.year}|{when.month}|{when.day}"
-        day = next((c for c in days.children if c.media_content_id.endswith(suffix)), None)
-        if day is None:
-            return {"status": "error", "reason": f"No recordings for {when.date()} on {cam.title}."}, None
-
-        files = (await async_browse_media(hass, day.media_content_id)).children
-        best = None
-        for f in files:
-            parts = f.media_content_id.split("|")
-            try:
-                fstart = datetime.strptime(parts[-2], _FILE_TS)
-                fend = datetime.strptime(parts[-1], _FILE_TS)
-            except (ValueError, IndexError):
-                continue
-            if fstart <= when < fend:
-                return f.media_content_id, fstart
-            if best is None or abs((fstart - when).total_seconds()) < abs((best[1] - when).total_seconds()):
-                best = (f.media_content_id, fstart)
-        if best is not None:
-            return best
-        return {"status": "error", "reason": f"No recording clip near {when.time()} on {cam.title}."}, None
 
     async def _extract_frame(self, hass, url: str, offset: float) -> bytes | None:
         """One JPEG frame at `offset` seconds into the recording, via ffmpeg."""
