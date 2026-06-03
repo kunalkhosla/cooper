@@ -16,6 +16,7 @@ from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.const import CONF_LLM_HASS_API, MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from . import _log, guardrails
 from .const import (
@@ -31,6 +32,18 @@ from .entity import CooperBaseLLMEntity
 
 if TYPE_CHECKING:
     from . import CooperRuntime
+
+
+def _now() -> str:
+    """The live local date/time, so the model never guesses 'now' (it had used tomorrow)."""
+    now = dt_util.now()
+    return (
+        "CURRENT DATE & TIME: "
+        + now.strftime("%A %Y-%m-%d %H:%M %Z")
+        + ". Use this as 'now' for every relative time. Recorded footage and history are in "
+        "the PAST: a bare clock time like '6:45 PM' means its most recent past occurrence "
+        "(earlier today if it has already passed, otherwise yesterday) — never a future date."
+    )
 
 
 def _mode_status(runtime: CooperRuntime) -> str:
@@ -183,6 +196,7 @@ class CooperConversationEntity(
         self._memory_block = "\n\n".join(
             block
             for block in (
+                _now(),
                 _mode_status(self.runtime),
                 _personality(humor, honesty),
                 memory,
