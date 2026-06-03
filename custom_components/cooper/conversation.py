@@ -35,14 +35,17 @@ if TYPE_CHECKING:
 
 
 def _now() -> str:
-    """The live local date/time, so the model never guesses 'now' (it had used tomorrow)."""
-    now = dt_util.now()
+    """The live HOME-local date/time, so the model never guesses 'now' (it had used tomorrow)."""
+    now = dt_util.now()  # Home Assistant's configured (home) timezone
     return (
-        "CURRENT DATE & TIME: "
-        + now.strftime("%A %Y-%m-%d %H:%M %Z")
-        + ". Use this as 'now' for every relative time. Recorded footage and history are in "
-        "the PAST: a bare clock time like '6:45 PM' means its most recent past occurrence "
-        "(earlier today if it has already passed, otherwise yesterday) — never a future date."
+        "CURRENT DATE & TIME (the HOME's timezone): "
+        + now.strftime("%A %Y-%m-%d %H:%M %Z (UTC%z)")
+        + ". Use this as 'now' for every relative time. Cameras, sensors, automations and "
+        "recordings all run in the home's timezone, so interpret any time about the house in "
+        "this zone even if the user is travelling elsewhere. Recorded footage and history are "
+        "in the PAST: a bare clock time like '6:45 PM' means its most recent past occurrence "
+        "(earlier today if it has passed, otherwise yesterday) — never a future date. If the "
+        "user clearly means their own different timezone, convert to home time first."
     )
 
 
