@@ -27,6 +27,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timedelta
 from functools import partial
+import os
+import tempfile
 from urllib.parse import urlsplit
 
 import voluptuous as vol
@@ -38,6 +40,7 @@ from homeassistant.components.media_source import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 from homeassistant.util.json import JsonObjectType
 
@@ -70,6 +73,11 @@ def _parse_when(raw: str) -> datetime | None:
 
 def _norm(text: str) -> str:
     return text.lower().removeprefix("camera.").replace("_", " ").strip()
+
+
+def _write_file(fd: int, data: bytes) -> None:
+    with os.fdopen(fd, "wb") as f:
+        f.write(data)
 
 
 def _even_samples(start: datetime, end: datetime) -> list[datetime]:
@@ -145,24 +153,32 @@ class LookAtFootageTool(CooperTool):
         runtime = get_runtime(hass)
         frames: list[dict] = []
         first_error: dict | None = None
-        for when, label in picks:
-            frame, shown = await self._frame_bytes(hass, camera, when)
-            if isinstance(frame, dict):
-                first_error = first_error or frame
-                continue
-            if frame is None:
-                continue
-            try:
-                desc = await runtime.provider.describe_image(
-                    frame, "image/jpeg", question, model=_FRAME_MODEL
-                )
-            except Exception as err:  # noqa: BLE001
-                LOGGER.warning("footage: describe failed: %s", err)
-                continue
-            item = {"time": shown.isoformat(timespec="seconds"), "description": desc}
-            if label:
-                item["detected"] = label
-            frames.append(item)
+        clips: dict[str, str] = {}  # file_id -> downloaded temp path (reused across frames)
+        try:
+            for when, label in picks:
+                frame, shown = await self._frame_bytes(hass, camera, when, clips)
+                if isinstance(frame, dict):
+                    first_error = first_error or frame
+                    continue
+                if frame is None:
+                    continue
+                try:
+                    desc = await runtime.provider.describe_image(
+                        frame, "image/jpeg", question, model=_FRAME_MODEL
+                    )
+                except Exception as err:  # noqa: BLE001
+                    LOGGER.warning("footage: describe failed: %s", err)
+                    continue
+                item = {"time": shown.isoformat(timespec="seconds"), "description": desc}
+                if label:
+                    item["detected"] = label
+                frames.append(item)
+        finally:
+            for path in clips.values():
+                try:
+                    os.unlink(path)
+                except OSError:
+                    pass
 
         if not frames:
             if first_error is not None:
@@ -244,24 +260,57 @@ class LookAtFootageTool(CooperTool):
             merged = [merged[int(i * step)] for i in range(_MAX_FRAMES)]
         return merged
 
-    async def _frame_bytes(self, hass, camera, when):
-        """Resolve the clip covering `when`; return (jpeg|err|None, shown_time)."""
+    async def _frame_bytes(self, hass, camera, when, clips):
+        """Resolve the clip covering `when`; return (jpeg|err|None, shown_time).
+
+        The Reolink proxy rejects HTTP Range, so ffmpeg can't seek over the network
+        (input-seek -> 400 'got text/html'). Instead download the (low-res) clip whole
+        once, cache it per file, and seek the LOCAL file — fast and reliable.
+        """
         file_id, shown = await self._find_file(hass, camera, when)
         if isinstance(file_id, dict):
             return file_id, None
+        path = clips.get(file_id)
+        if path is None:
+            path = await self._download_clip(hass, file_id)
+            if isinstance(path, dict):
+                return path, None
+            if path is None:
+                return None, shown
+            clips[file_id] = path
+        offset = max(0.0, (when - shown).total_seconds())
+        return await self._extract_frame(hass, path, offset), shown
+
+    async def _download_clip(self, hass, file_id) -> str | dict | None:
+        """Download a recording clip whole (no Range) to a temp file; return its path."""
         try:
             media = await async_resolve_media(hass, file_id, None)
         except Exception as err:  # noqa: BLE001
-            return {"status": "error", "reason": f"Could not resolve the recording: {err}"}, None
+            return {"status": "error", "reason": f"Could not resolve the recording: {err}"}
         parts = urlsplit(media.url)
-        path = parts.path + (f"?{parts.query}" if parts.query else "")
+        rel = parts.path + (f"?{parts.query}" if parts.query else "")
         try:
-            url = _INTERNAL_BASE + async_sign_path(hass, path, _URL_TTL)
+            url = _INTERNAL_BASE + async_sign_path(hass, rel, _URL_TTL)
         except Exception as err:  # noqa: BLE001
             LOGGER.warning("footage: could not sign url (%s); using raw", err)
             url = media.url if media.url.startswith("http") else _INTERNAL_BASE + media.url
-        offset = max(0.0, (when - shown).total_seconds())
-        return await self._extract_frame(hass, url, offset), shown
+        try:
+            session = async_get_clientsession(hass)
+            async with session.get(url) as resp:  # plain GET, no Range
+                if resp.status != 200:
+                    LOGGER.warning("footage: clip download HTTP %s", resp.status)
+                    return None
+                data = await resp.read()
+        except Exception as err:  # noqa: BLE001
+            LOGGER.warning("footage: clip download failed: %s", err)
+            return None
+        fd, tmp = tempfile.mkstemp(suffix=".mp4", prefix="cooper_footage_")
+        try:
+            await hass.async_add_executor_job(_write_file, fd, data)
+        except OSError as err:
+            LOGGER.warning("footage: temp write failed: %s", err)
+            return None
+        return tmp
 
     async def _find_file(self, hass, camera, when):
         """Walk CAM -> RES(main) -> day -> file. Returns (file_id, file_start) or (err, None)."""
@@ -285,15 +334,20 @@ class LookAtFootageTool(CooperTool):
             names = ", ".join(c.title for c in root.children)
             return {"status": "error", "reason": f"No camera matching '{camera}'. Have: {names}."}, None
 
+        # Prefer the low-res 'sub' stream — small clips (~8 MB vs ~240 MB), plenty for
+        # describing a person/car/animal, and far cheaper to download per frame.
         res = await async_browse_media(hass, cam.media_content_id)
-        main = next(
-            (c for c in res.children if c.media_content_id.endswith("|main")),
-            res.children[0] if res.children else None,
+        stream = next(
+            (c for c in res.children if c.media_content_id.endswith("|sub")),
+            next(
+                (c for c in res.children if c.media_content_id.endswith("|main")),
+                res.children[0] if res.children else None,
+            ),
         )
-        if main is None:
+        if stream is None:
             return {"status": "error", "reason": "Camera has no recordings."}, None
 
-        days = await async_browse_media(hass, main.media_content_id)
+        days = await async_browse_media(hass, stream.media_content_id)
         suffix = f"|{when.year}|{when.month}|{when.day}"
         day = next((c for c in days.children if c.media_content_id.endswith(suffix)), None)
         if day is None:
