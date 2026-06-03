@@ -16,9 +16,10 @@ from .tools_automation import AuthorAutomationTool
 from .tools_calendar import GetCalendarEventsTool
 from .tools_footage import LookAtFootageTool
 from .tools_history import HistoryTool
-from .tools_lifecycle import ListAuthoredTool, RemoveAuthoredTool
+from .tools_lifecycle import ListAuthoredTool, ListAutomationsTool, RemoveAuthoredTool
 from .tools_location import RefreshLocationTool
 from .tools_memory import ForgetTool, RecallTool, RememberTool
+from .tools_service import CallServiceTool
 from .tools_proactivity import CreateWatchTool, ListWatchesTool, RemoveWatchTool
 from .tools_vision import VisionTool
 
@@ -31,6 +32,11 @@ COOPER_API_PROMPT = (
     "(refresh_location, asynchronous), remember and recall the "
     "user's lasting preferences, author native automations and scripts (including timed, "
     "sequenced ones), and set up proactive watches that wake you when something happens. "
+    "Call a parameterized service on entities you NAME via call_service (e.g. a sprinkler "
+    "zone for a set number of minutes) — it resolves names to entity_ids, so never guess an "
+    "id; prefer it over authoring a one-off script for a timed/parameterized action. "
+    "list_automations shows ALL the home's automations (read-only) with their state and "
+    "last-run, and their config when you filter by name, so you can explain what they do. "
     "Prefer authoring a durable automation/script over promising to do something later. "
     "To tidy up, list_cooper_items shows the automations and scripts you authored and "
     "delete_cooper_item removes one — you can only ever delete your own (cooper_) items, "
@@ -57,7 +63,9 @@ class CooperAPI(llm.API):
             RememberTool(),
             RecallTool(),
             ForgetTool(),
+            CallServiceTool(),
             AuthorAutomationTool(),
+            ListAutomationsTool(),
             ListAuthoredTool(),
             RemoveAuthoredTool(),
             CreateWatchTool(),

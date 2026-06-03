@@ -40,6 +40,63 @@ def _state_summary(hass: HomeAssistant, entity_id: str | None) -> dict[str, obje
     }
 
 
+class ListAutomationsTool(CooperTool):
+    """Read-only view of ALL the home's automations (not just Cooper-authored ones)."""
+
+    name = "list_automations"
+    description = (
+        "List the home's automations (ALL of them, not only ones you made) with each one's "
+        "friendly name, on/off state, and when it last ran — to answer 'what automations do I "
+        "have', 'which are off', 'when did X last run'. Pass an optional 'name' to filter to "
+        "matching automations and include their trigger/condition/action so you can explain what "
+        "they do. READ-ONLY: you can see any automation, but you can still only edit or delete "
+        "your own (cooper_) items, never the user's."
+    )
+    parameters = vol.Schema({vol.Optional("name"): str})
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        needle = str(tool_input.tool_args.get("name") or "").strip().lower()
+        autos: list[dict] = []
+        for state in hass.states.async_all("automation"):
+            name = state.attributes.get("friendly_name") or state.entity_id
+            if needle and needle not in name.lower():
+                continue
+            autos.append(
+                {
+                    "entity_id": state.entity_id,
+                    "name": name,
+                    "id": state.attributes.get("id"),
+                    **_state_summary(hass, state.entity_id),
+                }
+            )
+        # Attach config (read-only) when filtering to specific automations.
+        if needle and autos:
+            configs = await hass.async_add_executor_job(
+                autoconfig._read_yaml,
+                hass.config.path(autoconfig.AUTOMATIONS_FILE),
+                [],
+            )
+            by_alias = {
+                str(c.get("alias", "")).lower(): c
+                for c in (configs if isinstance(configs, list) else [])
+                if isinstance(c, dict)
+            }
+            for a in autos:
+                cfg = by_alias.get(a["name"].lower())
+                if cfg:
+                    a["config"] = {
+                        "trigger": cfg.get("trigger") or cfg.get("triggers"),
+                        "condition": cfg.get("condition") or cfg.get("conditions"),
+                        "action": cfg.get("action") or cfg.get("actions"),
+                    }
+        return {"count": len(autos), "automations": autos}
+
+
 class ListAuthoredTool(CooperTool):
     """List the automations and scripts Cooper has authored (the only removable ones)."""
 
