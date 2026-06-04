@@ -70,6 +70,10 @@ LOCATE_TARGETS: dict[str, dict[str, str]] = {
 }
 # How long the background task waits for a fresh fix before giving up (seconds).
 LOCATE_TIMEOUT = 150
+# When the user asks to WAIT for the answer in-conversation (wait=true), how long the
+# tool blocks the turn inline before handing off to the background notify path. Kept well
+# under voice/assist turn timeouts; a phone/watch fix often lands within this window.
+LOCATE_WAIT_TIMEOUT = 45
 # Default follow-up channel when the caller doesn't name one.
 LOCATE_DEFAULT_NOTIFY = "persistent_notification.create"
 
@@ -174,9 +178,12 @@ How you operate:
   unprompted: when location matters, report what you can see now and OFFER to get a fresh fix, then
   only run refresh_location after the user clearly says yes. Do not treat a plain "where is X" as
   permission to refresh. The tool itself will refuse an unconfirmed call — ask one yes/no, then
-  call it with confirm=true. It is ASYNCHRONOUS (up to a couple of minutes): once you do run it,
-  say you've started it and will follow up, do NOT wait or block, and do NOT claim the new location
-  yet — it arrives later as a notification.
+  call it with confirm=true. By DEFAULT it is asynchronous (up to a couple of minutes): say you've
+  started it and will follow up, and do NOT claim the new location yet — it arrives later as a
+  notification. BUT if the user says they'll wait, wants the answer now in the conversation, or
+  doesn't want a notification, call it with wait=true: it then blocks briefly and may return the
+  fresh place inline. If it comes back "located", just tell them where the person is now; only fall
+  back to "I'll follow up when it lands" for anyone whose fix didn't arrive in that short window.
 """
 
 # Seed prepended (as extra system prompt) when the agent is woken by a proactive
