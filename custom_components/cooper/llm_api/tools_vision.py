@@ -19,6 +19,30 @@ from ..guardrails import CooperTool
 _DEFAULT_QUESTION = "Describe what you see in this image concisely."
 
 
+def _image_candidates(hass: HomeAssistant, entity_id: str) -> list[str]:
+    """Ordered camera entities to try for a still, MAIN/clear stream first.
+
+    Reolink (and similar) split each camera into ``<base>_clear`` (main/high-res) and
+    ``<base>_fluent`` (sub/low-res). The SUB-stream snapshot frequently fails with a 500
+    while the main stream returns fine, so when handed a fluent/clear entity we try the
+    clear (main) sibling first, then the requested one, then the fluent — and use whichever
+    actually yields an image. Non-paired cameras just use the given entity.
+    """
+    base = None
+    for suffix in ("_clear", "_fluent"):
+        if entity_id.endswith(suffix):
+            base = entity_id[: -len(suffix)]
+            break
+    ordered = (
+        [f"{base}_clear", entity_id, f"{base}_fluent"] if base is not None else [entity_id]
+    )
+    out: list[str] = []
+    for cand in ordered:
+        if cand not in out and hass.states.get(cand) is not None:
+            out.append(cand)
+    return out or [entity_id]
+
+
 class VisionTool(CooperTool):
     """Capture a camera image and return a natural-language description."""
 
@@ -26,7 +50,9 @@ class VisionTool(CooperTool):
     description = (
         "Look at a camera and describe what is visible right now. Use to answer questions "
         "like 'what's on the driveway?' or 'is anyone at the front door?'. Pass the camera's "
-        "entity_id and, optionally, a specific question about the scene."
+        "entity_id and, optionally, a specific question about the scene. You can pass either the "
+        "main or sub stream entity — it automatically uses the camera's best working stream. If it "
+        "reports the live snapshot is down, use look_at_recorded_footage for that camera instead."
     )
     parameters = vol.Schema(
         {
@@ -57,10 +83,28 @@ class VisionTool(CooperTool):
         except ImportError:
             return {"status": "error", "reason": "The camera integration is unavailable."}
 
-        try:
-            image = await async_get_image(hass, entity_id, timeout=10)
-        except HomeAssistantError as err:
-            return {"status": "error", "reason": f"Could not get an image: {err}"}
+        # Try the main stream first, then siblings — sub-stream snapshots often 500.
+        candidates = _image_candidates(hass, entity_id)
+        image = None
+        used = entity_id
+        errors: list[str] = []
+        for cand in candidates:
+            try:
+                image = await async_get_image(hass, cand, timeout=10)
+                used = cand
+                break
+            except HomeAssistantError as err:
+                errors.append(f"{cand}: {err}")
+        if image is None:
+            return {
+                "status": "error",
+                "reason": (
+                    "Could not get a live image from "
+                    + " / ".join(candidates)
+                    + f" ({'; '.join(errors)}). The camera's snapshot may be down right now — "
+                    "fall back to look_at_recorded_footage for this camera instead."
+                ),
+            }
 
         question = tool_input.tool_args.get("question") or _DEFAULT_QUESTION
         runtime = get_runtime(hass)
@@ -70,4 +114,4 @@ class VisionTool(CooperTool):
             question,
             model=str(DEFAULT[CONF_CHAT_MODEL]),
         )
-        return {"entity_id": entity_id, "description": description}
+        return {"entity_id": used, "description": description}
