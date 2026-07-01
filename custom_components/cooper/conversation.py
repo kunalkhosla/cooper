@@ -192,14 +192,19 @@ class CooperConversationEntity(
         guardrails.wrap_tools(self.hass, chat_log, self.runtime)
 
         # Insert 2: tell the model its live safety mode, then its durable preferences.
+        # The minute-precision clock (_now) is deliberately NOT in this block: it is a
+        # CACHED system prefix (see entity._build_system), so a per-minute timestamp here
+        # would rewrite the cache every minute and tank the prompt-cache hit rate. The
+        # clock is injected into the latest user message instead — after the cache
+        # breakpoint — by entity._inject_now, keeping this prefix byte-stable across turns.
         user_id = user_input.context.user_id if user_input.context else None
         memory = await self.runtime.memory.get_block(user_id, None)
         humor = int(self.subentry.data.get(CONF_HUMOR, DEFAULT[CONF_HUMOR]))
         honesty = int(self.subentry.data.get(CONF_HONESTY, DEFAULT[CONF_HONESTY]))
+        self._now_block = _now()
         self._memory_block = "\n\n".join(
             block
             for block in (
-                _now(),
                 _mode_status(self.runtime),
                 _personality(humor, honesty),
                 memory,

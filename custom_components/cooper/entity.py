@@ -50,6 +50,7 @@ class CooperBaseLLMEntity(CoordinatorEntity[CooperCoordinator]):
         super().__init__(self.runtime.coordinator)
         self._attr_unique_id = subentry.subentry_id
         self._memory_block = ""
+        self._now_block = ""
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, subentry.subentry_id)},
             name=subentry.title,
@@ -62,10 +63,13 @@ class CooperBaseLLMEntity(CoordinatorEntity[CooperCoordinator]):
         return self.subentry.data.get(key, DEFAULT.get(key))
 
     def _build_system(self, chat_log: conversation.ChatLog) -> list[dict[str, Any]] | str:
-        """Persona + HA grounding as block #1, durable memory as block #2.
+        """Persona + HA grounding as block #1, durable prefs/memory as block #2.
 
-        Caching breakpoints sit on the first and last block so the big, stable prefix
-        (tool defs + persona + grounding) caches independently of volatile memory.
+        Both blocks are byte-stable across turns, so the caching breakpoints on the first
+        and last block let the whole system prefix (tool defs + persona + grounding +
+        durable memory) read from cache. The volatile minute-precision clock is injected
+        into the latest user message instead (see ``_get_model_args`` / ``_inject_now``),
+        so it never invalidates this prefix.
         """
         grounding = chat_log.content[0].content or ""
         blocks: list[dict[str, Any]] = [{"type": "text", "text": grounding}]
@@ -93,11 +97,31 @@ class CooperBaseLLMEntity(CoordinatorEntity[CooperCoordinator]):
             )
         return tools
 
+    def _inject_now(self, messages: list[dict[str, Any]]) -> None:
+        """Append the live clock to the latest user turn (after the cached prefix).
+
+        The clock is minute-precision and changes constantly. The cache breakpoints sit on
+        the system blocks (see ``_build_system``), so keeping the clock OUT of them — here,
+        by carrying it on the latest user message instead — is what keeps the whole system
+        prefix (tool defs + persona + grounding + durable memory) byte-stable across turns.
+        Its exact position within ``messages`` is immaterial to caching.
+        """
+        if not self._now_block or not messages or messages[-1]["role"] != "user":
+            return
+        now_block = {"type": "text", "text": self._now_block}
+        last = messages[-1]
+        if isinstance(last["content"], str):
+            last["content"] = [{"type": "text", "text": last["content"]}, now_block]
+        else:
+            last["content"].append(now_block)
+
     def _get_model_args(self, chat_log: conversation.ChatLog) -> dict[str, Any]:
         provider = self.runtime.provider
+        messages = convert_content(chat_log.content[1:])
+        self._inject_now(messages)
         return provider.build_stream_kwargs(
             system=self._build_system(chat_log),
-            messages=convert_content(chat_log.content[1:]),
+            messages=messages,
             tools=self._build_tools(chat_log),
             model=str(self._opt(CONF_CHAT_MODEL)),
             max_tokens=int(self._opt(CONF_MAX_TOKENS)),
