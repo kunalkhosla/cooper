@@ -21,6 +21,7 @@ from .tools_location import RefreshLocationTool
 from .tools_memory import ForgetTool, RecallTool, RememberTool
 from .tools_service import CallServiceTool
 from .tools_proactivity import CreateWatchTool, ListWatchesTool, RemoveWatchTool
+from .tools_swim import GetSwimInfoTool
 from .tools_vision import VisionTool
 
 COOPER_API_PROMPT = (
@@ -41,7 +42,11 @@ COOPER_API_PROMPT = (
     "To tidy up, list_cooper_items shows the automations and scripts you authored and "
     "delete_cooper_item removes one — you can only ever delete your own (cooper_) items, "
     "never the user's, so when asked to clean up old automations, list first then remove "
-    "the unneeded ones with confirmation."
+    "the unneeded ones with confirmation. "
+    "For anything about SWIMMING — a swimmer's meets and events, live meet results "
+    "(heat/lane/place), best times, how far from their Silver/Gold cut, recent results, or "
+    "the team PRACTICE schedule (today/this week/where) — use get_swim_info; if the asker is "
+    "a swimmer, 'my/I' resolves to them."
 )
 
 
@@ -71,6 +76,7 @@ class CooperAPI(llm.API):
             CreateWatchTool(),
             ListWatchesTool(),
             RemoveWatchTool(),
+            GetSwimInfoTool(),
         ]
         return llm.APIInstance(
             api=self,
