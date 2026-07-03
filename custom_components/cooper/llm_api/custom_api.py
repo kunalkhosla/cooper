@@ -18,6 +18,7 @@ from .tools_footage import LookAtFootageTool
 from .tools_history import HistoryTool
 from .tools_lifecycle import ListAuthoredTool, ListAutomationsTool, RemoveAuthoredTool
 from .tools_location import RefreshLocationTool
+from .tools_media import SearchTvTool, WatchTvTool
 from .tools_memory import ForgetTool, RecallTool, RememberTool
 from .tools_service import CallServiceTool
 from .tools_proactivity import CreateWatchTool, ListWatchesTool, RemoveWatchTool
@@ -46,7 +47,11 @@ COOPER_API_PROMPT = (
     "For anything about SWIMMING — a swimmer's meets and events, live meet results "
     "(heat/lane/place), best times, how far from their Silver/Gold cut, recent results, or "
     "the team PRACTICE schedule (today/this week/where) — use get_swim_info; if the asker is "
-    "a swimmer, 'my/I' resolves to them."
+    "a swimmer, 'my/I' resolves to them. "
+    "For watching TV: a decisive 'put on / play <X> [on the <room> TV]' → watch_tv (it plays "
+    "immediately; ASK which TV if none is named and resolve it to a media_player first); a "
+    "browse 'show me / what do you have' → search_tv (lists matches, doesn't play). Use plain "
+    "media controls (pause/volume/stop) for a TV that's already playing."
 )
 
 
@@ -77,6 +82,8 @@ class CooperAPI(llm.API):
             ListWatchesTool(),
             RemoveWatchTool(),
             GetSwimInfoTool(),
+            SearchTvTool(),
+            WatchTvTool(),
         ]
         return llm.APIInstance(
             api=self,
