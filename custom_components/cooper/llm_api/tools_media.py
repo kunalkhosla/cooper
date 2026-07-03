@@ -100,7 +100,7 @@ class SearchTvTool(CooperTool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         cfg = await hass.async_add_executor_job(_load_config)
-        url = (cfg.get("url") or "").rstrip("/")
+        url = str(cfg.get("url") or "").rstrip("/")
         if not url:
             return {"status": "error", "reason": f"TV app not configured ({CONFIG_PATH} missing 'url')"}
         query = str(tool_input.tool_args.get("query") or "").strip()
@@ -176,7 +176,7 @@ class WatchTvTool(CooperTool):
 
         runtime = get_runtime(hass)
         cfg = await hass.async_add_executor_job(_load_config)
-        url = (cfg.get("url") or "").rstrip("/")
+        url = str(cfg.get("url") or "").rstrip("/")
         if not url:
             return {
                 "status": "error",
@@ -228,7 +228,7 @@ class WatchTvTool(CooperTool):
             return {"status": "error", "reason": f"couldn't reach the TV app: {err} — tell the user it didn't work"}
 
         action = data.get("action") if isinstance(data, dict) else None
-        reply = str((data or {}).get("reply") or "") if isinstance(data, dict) else ""
+        reply = str(data.get("reply") or "") if isinstance(data, dict) else ""
         if not (isinstance(action, dict) and action.get("type") == "play"):
             return {
                 "status": "not_played",
@@ -248,7 +248,7 @@ class WatchTvTool(CooperTool):
 
         # "script.play_iptv" -> domain "script", service "play_iptv" (accept a bare
         # service name too). The script resolves a fresh signed stream and casts it.
-        play_script = cfg.get("play_script") or "script.play_iptv"
+        play_script = str(cfg.get("play_script") or "script.play_iptv")
         if "." not in play_script:
             play_script = f"script.{play_script}"
         pdomain, psvc = play_script.split(".", 1)
