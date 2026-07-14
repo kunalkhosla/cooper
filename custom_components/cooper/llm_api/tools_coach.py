@@ -13,13 +13,12 @@ Config lives OUTSIDE this (public) repo in ``/config/cooper_coach.json`` so pers
 macros/targets/plan details aren't committed::
 
     {
-      "default_user": "kunal",
       "profile": {
-        "goal": "190lb / 86.2kg at 13% body fat",
+        "goal": "<free text — e.g. target weight/body-fat%>",
         "targets": {
-          "active_phase": "phase2",
-          "phase1": {"kcal": 2450, "protein_g": 180, "carb_g": 216, "fat_g": 96},
-          "phase2": {"kcal": 2100, "protein_g": 180, "carb_g": 173, "fat_g": 77}
+          "active_phase": "<key into the phase below>",
+          "phase1": {"kcal": 0, "protein_g": 0, "carb_g": 0, "fat_g": 0},
+          "phase2": {"kcal": 0, "protein_g": 0, "carb_g": 0, "fat_g": 0}
         },
         "base_template": { "...": "per-item macros + cooked/raw conversion factors" },
         "rotation": { "...": "current week's dishes + shopping list" },
@@ -43,6 +42,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
 from homeassistant.util.json import JsonObjectType
 
+from ..const import LOGGER
 from ..guardrails import CooperTool
 
 CONFIG_PATH = os.environ.get("COOPER_COACH_CONFIG", "/config/cooper_coach.json")
@@ -142,8 +142,8 @@ class LogWeightTool(CooperTool):
                 {"entity_id": BODY_WEIGHT_ENTITY, "value": kg},
                 blocking=True,
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as err:  # noqa: BLE001 - best-effort dashboard mirror only
+            LOGGER.debug("cooper: could not mirror weight to %s: %s", BODY_WEIGHT_ENTITY, err)
 
         return {"status": "logged", "entry": entry}
 
