@@ -14,6 +14,13 @@ from homeassistant.helpers import llm
 from ..const import DOMAIN
 from .tools_automation import AuthorAutomationTool
 from .tools_calendar import GetCalendarEventsTool
+from .tools_coach import (
+    GetCoachContextTool,
+    GetFitnessSummaryTool,
+    LogAlcoholTool,
+    LogTrainingTool,
+    LogWeightTool,
+)
 from .tools_footage import LookAtFootageTool
 from .tools_history import HistoryTool
 from .tools_lifecycle import ListAuthoredTool, ListAutomationsTool, RemoveAuthoredTool
@@ -51,7 +58,13 @@ COOPER_API_PROMPT = (
     "For watching TV: a decisive 'put on / play <X> [on the <room> TV]' → watch_tv (it plays "
     "immediately; ASK which TV if none is named and resolve it to a media_player first); a "
     "browse 'show me / what do you have' → search_tv (lists matches, doesn't play). Use plain "
-    "media controls (pause/volume/stop) for a TV that's already playing."
+    "media controls (pause/volume/stop) for a TV that's already playing. "
+    "For nutrition/fat-loss coaching — meals, calories, macros, ingredient swaps, or "
+    "progress questions — call get_coach_context first and reason over the plan it returns "
+    "(report cooked/final weight by default, raw only for Sunday meal-prep); log_weight, "
+    "log_training, and log_alcohol record what the user tells you happened; "
+    "get_fitness_summary answers 'how am I doing' with the rolling weekly weight trend, "
+    "recent training, and this month's drink count."
 )
 
 
@@ -84,6 +97,11 @@ class CooperAPI(llm.API):
             GetSwimInfoTool(),
             SearchTvTool(),
             WatchTvTool(),
+            GetCoachContextTool(),
+            LogWeightTool(),
+            LogTrainingTool(),
+            LogAlcoholTool(),
+            GetFitnessSummaryTool(),
         ]
         return llm.APIInstance(
             api=self,

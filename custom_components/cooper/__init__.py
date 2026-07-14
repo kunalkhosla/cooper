@@ -34,6 +34,7 @@ from .const import (
 )
 from . import _log
 from .coordinator import CooperCoordinator
+from .fitness import FitnessStore
 from .guardrails import PendingConfirmations
 from .memory import MemoryStore
 from .provider.anthropic_client import AnthropicProvider
@@ -50,6 +51,7 @@ class CooperRuntime:
     provider: AnthropicProvider
     coordinator: CooperCoordinator
     memory: MemoryStore
+    fitness: FitnessStore
     observe_mode: bool
     kill_switch: bool = False
     confirm_bulk_threshold: int = 5
@@ -102,6 +104,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: CooperConfigEntry) -> bo
         provider=provider,
         coordinator=coordinator,
         memory=MemoryStore(hass),
+        fitness=FitnessStore(hass),
         observe_mode=_seed_observe_mode(entry),
         confirm_bulk_threshold=confirm_threshold,
         location_notify=list(_seed_subentry_value(entry, CONF_LOCATE_NOTIFY) or []),
