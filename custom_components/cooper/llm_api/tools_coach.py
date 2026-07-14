@@ -286,18 +286,23 @@ class GetTodayProgressTool(CooperTool):
 
         cfg = await hass.async_add_executor_job(_load_config)
         profile = cfg.get("profile")
-        if not profile:
+        if not isinstance(profile, dict) or not profile:
             return {
                 "status": "error",
                 "reason": f"coach plan not configured ({CONFIG_PATH} missing 'profile')",
             }
-        targets = profile.get("targets", {})
+        targets = profile.get("targets")
+        if not isinstance(targets, dict):
+            targets = {}
         active = targets.get("active_phase")
         target = targets.get(active) if active else None
-        if not target:
+        if not isinstance(target, dict) or not target:
             return {
                 "status": "error",
-                "reason": "coach plan has no active_phase target configured",
+                "reason": (
+                    "coach plan has no valid active_phase target configured "
+                    f"(check {CONFIG_PATH}'s profile.targets)"
+                ),
             }
 
         runtime = get_runtime(hass)
