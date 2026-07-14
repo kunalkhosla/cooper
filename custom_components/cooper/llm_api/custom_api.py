@@ -17,7 +17,9 @@ from .tools_calendar import GetCalendarEventsTool
 from .tools_coach import (
     GetCoachContextTool,
     GetFitnessSummaryTool,
+    GetTodayProgressTool,
     LogAlcoholTool,
+    LogMealTool,
     LogTrainingTool,
     LogWeightTool,
 )
@@ -62,9 +64,12 @@ COOPER_API_PROMPT = (
     "For nutrition/fat-loss coaching — meals, calories, macros, ingredient swaps, or "
     "progress questions — call get_coach_context first and reason over the plan it returns "
     "(report cooked/final weight by default, raw only for Sunday meal-prep); log_weight, "
-    "log_training, and log_alcohol record what the user tells you happened; "
-    "get_fitness_summary answers 'how am I doing' with the rolling weekly weight trend, "
-    "recent training, and this month's drink count."
+    "log_training, and log_alcohol record what the user tells you happened; whenever the "
+    "user tells you what they ate, estimate its macros yourself (same reasoning as a swap "
+    "question) and call log_meal so it's tracked — don't just acknowledge it and move on; "
+    "get_today_progress answers 'how many calories/protein do I have left today' from what's "
+    "been logged via log_meal; get_fitness_summary answers 'how am I doing' with the rolling "
+    "weekly weight trend, recent training, and this month's drink count."
 )
 
 
@@ -101,6 +106,8 @@ class CooperAPI(llm.API):
             LogWeightTool(),
             LogTrainingTool(),
             LogAlcoholTool(),
+            LogMealTool(),
+            GetTodayProgressTool(),
             GetFitnessSummaryTool(),
         ]
         return llm.APIInstance(

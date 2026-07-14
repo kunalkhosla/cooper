@@ -112,6 +112,46 @@ class FitnessStore:
             user_id, "alcohol", {"date": _today(), "drinks": drinks, "note": note}
         )
 
+    async def log_meal(
+        self,
+        user_id: str | None,
+        description: str,
+        kcal: float,
+        protein_g: float = 0.0,
+        carb_g: float = 0.0,
+        fat_g: float = 0.0,
+    ) -> dict[str, Any]:
+        return await self._append(
+            user_id,
+            "meals",
+            {
+                "date": _today(),
+                "description": description,
+                "kcal": round(kcal, 1),
+                "protein_g": round(protein_g, 1),
+                "carb_g": round(carb_g, 1),
+                "fat_g": round(fat_g, 1),
+            },
+        )
+
+    async def today_totals(self, user_id: str | None) -> dict[str, Any]:
+        """Sum today's logged meals. Does not know the day's TARGET - callers combine
+        this with the coach config's active-phase macros to compute what's remaining.
+        """
+        data = await self._load()
+        meals = [
+            m
+            for m in data.get(_scope(user_id), {}).get("meals", [])
+            if m["date"] == _today()
+        ]
+        totals = {
+            "kcal": round(sum(m["kcal"] for m in meals), 1),
+            "protein_g": round(sum(m["protein_g"] for m in meals), 1),
+            "carb_g": round(sum(m["carb_g"] for m in meals), 1),
+            "fat_g": round(sum(m["fat_g"] for m in meals), 1),
+        }
+        return {"consumed": totals, "meals_logged": meals}
+
     async def summary(self, user_id: str | None) -> dict[str, Any]:
         """Rolling weight trend + recent training + this-month drink count."""
         data = await self._load()
