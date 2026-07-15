@@ -228,7 +228,8 @@ class LogMealTool(CooperTool):
         "e.g. '3 eggs, 2 toast, black coffee') and your estimated 'kcal'/'protein_g'/"
         "'carb_g'/'fat_g'. Use whenever the user tells you what they ate or drank (that "
         "has calories) — this is what makes 'how many calories do I have left today' "
-        "answerable later via get_today_progress."
+        "answerable later via get_today_progress. If this is a CORRECTION to something "
+        "already logged, call delete_meal on the old entry first — don't log on top of it."
     )
     parameters = vol.Schema(
         {
@@ -262,6 +263,40 @@ class LogMealTool(CooperTool):
             fat_g=float(args.get("fat_g", 0)),
         )
         return {"status": "logged", "entry": entry}
+
+
+class DeleteMealTool(CooperTool):
+    """Remove a previously logged meal entry, by id."""
+
+    name = "delete_meal"
+    description = (
+        "Remove a previously logged meal, identified by its 'id' (returned by log_meal "
+        "when logged, and present on each entry in get_today_progress's meals_logged "
+        "list). Use this whenever the user CORRECTS or RETRACTS something already logged "
+        "today (e.g. 'actually make that 2 breads, not 1' or 'I didn't actually have the "
+        "yogurt') — call delete_meal on the old entry's id FIRST, then log_meal with the "
+        "corrected version. Never just log a corrected entry on top of the old one, or "
+        "today's totals will double-count."
+    )
+    parameters = vol.Schema({vol.Required("entry_id"): str})
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        from .. import get_runtime
+
+        runtime = get_runtime(hass)
+        if runtime.kill_switch:
+            return {"status": "refused", "reason": "Cooper's kill switch is on."}
+
+        entry_id = str(tool_input.tool_args["entry_id"])
+        removed = await runtime.fitness.delete_meal(_user_id(llm_context), entry_id)
+        if not removed:
+            return {"status": "not_found", "entry_id": entry_id}
+        return {"status": "deleted", "entry_id": entry_id}
 
 
 class GetTodayProgressTool(CooperTool):

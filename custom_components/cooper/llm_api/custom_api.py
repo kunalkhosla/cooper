@@ -15,6 +15,7 @@ from ..const import DOMAIN
 from .tools_automation import AuthorAutomationTool
 from .tools_calendar import GetCalendarEventsTool
 from .tools_coach import (
+    DeleteMealTool,
     GetCoachContextTool,
     GetFitnessSummaryTool,
     GetTodayProgressTool,
@@ -67,6 +68,10 @@ COOPER_API_PROMPT = (
     "log_training, and log_alcohol record what the user tells you happened; whenever the "
     "user tells you what they ate, estimate its macros yourself (same reasoning as a swap "
     "question) and call log_meal so it's tracked — don't just acknowledge it and move on; "
+    "if the user then CORRECTS a meal you already logged (e.g. 'make that 2 breads not 1', "
+    "'I didn't actually have the yogurt'), call delete_meal on the old entry's id first, "
+    "THEN log_meal with the corrected version — never log the correction on top of the "
+    "original or today's totals will double-count; "
     "get_today_progress answers 'how many calories/protein do I have left today' from what's "
     "been logged via log_meal; get_fitness_summary answers 'how am I doing' with the rolling "
     "weekly weight trend, recent training, and this month's drink count."
@@ -107,6 +112,7 @@ class CooperAPI(llm.API):
             LogTrainingTool(),
             LogAlcoholTool(),
             LogMealTool(),
+            DeleteMealTool(),
             GetTodayProgressTool(),
             GetFitnessSummaryTool(),
         ]

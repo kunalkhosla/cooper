@@ -8,6 +8,7 @@ to answer "what's my weight trend" / "how's training going" questions.
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from typing import Any
 
@@ -125,6 +126,7 @@ class FitnessStore:
             user_id,
             "meals",
             {
+                "id": uuid.uuid4().hex[:8],
                 "date": _today(),
                 "description": description,
                 "kcal": round(kcal, 1),
@@ -133,6 +135,21 @@ class FitnessStore:
                 "fat_g": round(fat_g, 1),
             },
         )
+
+    async def delete_meal(self, user_id: str | None, entry_id: str) -> bool:
+        """Remove a logged meal by id. Returns False if no entry matched.
+
+        Meals logged before this field existed have no 'id' and can't be targeted -
+        harmless, they just age out as old history.
+        """
+        data = await self._load()
+        meals = data.get(_scope(user_id), {}).get("meals", [])
+        for i, meal in enumerate(meals):
+            if meal.get("id") == entry_id:
+                del meals[i]
+                await self._store.async_save(data)
+                return True
+        return False
 
     async def today_totals(self, user_id: str | None) -> dict[str, Any]:
         """Sum today's logged meals. Does not know the day's TARGET - callers combine
