@@ -8,6 +8,7 @@ to answer "what's my weight trend" / "how's training going" questions.
 
 from __future__ import annotations
 
+import uuid
 from datetime import date
 from typing import Any
 
@@ -125,6 +126,7 @@ class FitnessStore:
             user_id,
             "meals",
             {
+                "id": uuid.uuid4().hex[:8],
                 "date": _today(),
                 "description": description,
                 "kcal": round(kcal, 1),
@@ -133,6 +135,63 @@ class FitnessStore:
                 "fat_g": round(fat_g, 1),
             },
         )
+
+    async def delete_meal(self, user_id: str | None, entry_id: str) -> bool:
+        """Remove a meal logged TODAY, by id. Returns False if no entry matched.
+
+        Scoped to today only, matching the tool's own description ("already logged
+        today") - a stray/hallucinated id can't reach into older history. Meals logged
+        before this field existed have no 'id' and can't be targeted - harmless, they
+        just age out as old history.
+        """
+        data = await self._load()
+        meals = data.get(_scope(user_id), {}).get("meals", [])
+        today = _today()
+        for i, meal in enumerate(meals):
+            if meal.get("id") == entry_id and meal.get("date") == today:
+                del meals[i]
+                await self._store.async_save(data)
+                return True
+        return False
+
+    async def correct_meal(
+        self,
+        user_id: str | None,
+        entry_id: str,
+        description: str,
+        kcal: float,
+        protein_g: float = 0.0,
+        carb_g: float = 0.0,
+        fat_g: float = 0.0,
+    ) -> dict[str, Any]:
+        """Atomically replace a meal logged today: one load/save covers both the
+        removal of entry_id (if it matches a meal from today) and the append of the
+        corrected entry, so a failure/interruption between two separate calls can't
+        silently drop the meal (the failure mode a delete_meal + log_meal pair has).
+        If entry_id doesn't match, the corrected entry is still logged (old_entry_found
+        comes back False so the caller can flag it).
+        """
+        data = await self._load()
+        meals = data.setdefault(_scope(user_id), {}).setdefault("meals", [])
+        today = _today()
+        old_entry_found = False
+        for i, meal in enumerate(meals):
+            if meal.get("id") == entry_id and meal.get("date") == today:
+                del meals[i]
+                old_entry_found = True
+                break
+        new_entry = {
+            "id": uuid.uuid4().hex[:8],
+            "date": today,
+            "description": description,
+            "kcal": round(kcal, 1),
+            "protein_g": round(protein_g, 1),
+            "carb_g": round(carb_g, 1),
+            "fat_g": round(fat_g, 1),
+        }
+        meals.append(new_entry)
+        await self._store.async_save(data)
+        return {"entry": new_entry, "old_entry_found": old_entry_found}
 
     async def today_totals(self, user_id: str | None) -> dict[str, Any]:
         """Sum today's logged meals. Does not know the day's TARGET - callers combine
