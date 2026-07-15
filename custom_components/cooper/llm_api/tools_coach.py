@@ -229,7 +229,7 @@ class LogMealTool(CooperTool):
         "'carb_g'/'fat_g'. Use whenever the user tells you what they ate or drank (that "
         "has calories) — this is what makes 'how many calories do I have left today' "
         "answerable later via get_today_progress. If this is a CORRECTION to something "
-        "already logged, call delete_meal on the old entry first — don't log on top of it."
+        "already logged, use correct_meal instead — don't log on top of it."
     )
     parameters = vol.Schema(
         {
@@ -266,17 +266,17 @@ class LogMealTool(CooperTool):
 
 
 class DeleteMealTool(CooperTool):
-    """Remove a previously logged meal entry, by id."""
+    """Remove a previously logged meal entry, by id — for a pure retraction (no replacement)."""
 
     name = "delete_meal"
     description = (
-        "Remove a previously logged meal, identified by its 'id' (returned by log_meal "
-        "when logged, and present on each entry in get_today_progress's meals_logged "
-        "list). Use this whenever the user CORRECTS or RETRACTS something already logged "
-        "today (e.g. 'actually make that 2 breads, not 1' or 'I didn't actually have the "
-        "yogurt') — call delete_meal on the old entry's id FIRST, then log_meal with the "
-        "corrected version. Never just log a corrected entry on top of the old one, or "
-        "today's totals will double-count."
+        "Remove a meal logged TODAY, identified by its 'id' (returned by log_meal/"
+        "correct_meal when logged, and present on each entry in get_today_progress's "
+        "meals_logged list). Use this ONLY for a pure retraction with no replacement "
+        "(e.g. 'I didn't actually have the yogurt, forget that'). If the user is instead "
+        "CORRECTING a meal to a different version (e.g. 'make that 2 breads, not 1'), use "
+        "correct_meal instead — it replaces the entry atomically, so it can't leave you "
+        "with neither the old nor the new entry if something goes wrong mid-correction."
     )
     parameters = vol.Schema({vol.Required("entry_id"): str})
 
@@ -297,6 +297,60 @@ class DeleteMealTool(CooperTool):
         if not removed:
             return {"status": "not_found", "entry_id": entry_id}
         return {"status": "deleted", "entry_id": entry_id}
+
+
+class CorrectMealTool(CooperTool):
+    """Atomically replace a meal logged today with a corrected version."""
+
+    name = "correct_meal"
+    description = (
+        "Replace a meal you already logged TODAY with a corrected version, in ONE "
+        "atomic step — use this for any correction ('actually make that 2 breads, not "
+        "1', 'I had chicken not tofu'), never a separate delete_meal + log_meal pair "
+        "(if something interrupts you between those two calls, the meal is silently "
+        "lost entirely). Pass the old entry's 'entry_id' (from log_meal's response or "
+        "get_today_progress's meals_logged list) plus the corrected 'description'/"
+        "'kcal'/'protein_g'/'carb_g'/'fat_g'. If you don't already have the id — e.g. "
+        "correcting something mentioned earlier in the conversation — call "
+        "get_today_progress FIRST and match the old entry by its description to find "
+        "its id. If entry_id doesn't match anything (already removed, wrong id, or from "
+        "a prior day), the corrected version is still logged; check the response's "
+        "'old_entry_found' field and mention it to the user if it came back false."
+    )
+    parameters = vol.Schema(
+        {
+            vol.Required("entry_id"): str,
+            vol.Required("description"): str,
+            vol.Required("kcal"): vol.Coerce(float),
+            vol.Optional("protein_g", default=0): vol.Coerce(float),
+            vol.Optional("carb_g", default=0): vol.Coerce(float),
+            vol.Optional("fat_g", default=0): vol.Coerce(float),
+        }
+    )
+
+    async def async_call(
+        self,
+        hass: HomeAssistant,
+        tool_input: llm.ToolInput,
+        llm_context: llm.LLMContext,
+    ) -> JsonObjectType:
+        from .. import get_runtime
+
+        runtime = get_runtime(hass)
+        if runtime.kill_switch:
+            return {"status": "refused", "reason": "Cooper's kill switch is on."}
+
+        args = tool_input.tool_args
+        result = await runtime.fitness.correct_meal(
+            _user_id(llm_context),
+            str(args["entry_id"]),
+            str(args["description"]),
+            float(args["kcal"]),
+            protein_g=float(args.get("protein_g", 0)),
+            carb_g=float(args.get("carb_g", 0)),
+            fat_g=float(args.get("fat_g", 0)),
+        )
+        return {"status": "logged", **result}
 
 
 class GetTodayProgressTool(CooperTool):
