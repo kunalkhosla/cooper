@@ -15,6 +15,7 @@ macros/targets/plan details aren't committed::
     {
       "profile": {
         "goal": "<free text — e.g. target weight/body-fat%>",
+        "auto_weight_entity": "<optional sensor entity_id auto-reporting body weight, e.g. from a phone's Health-Connect bridge — folded into get_fitness_summary's trend; omit to skip>",
         "targets": {
           "active_phase": "<key into the phase below>",
           "phase1": {"kcal": 0, "protein_g": 0, "carb_g": 0, "fat_g": 0},
@@ -32,6 +33,8 @@ converts, since the user thinks in both lb and kg depending on context.
 
 from __future__ import annotations
 
+from datetime import timedelta
+from functools import partial
 import json
 import os
 from typing import Any
@@ -40,6 +43,7 @@ import voluptuous as vol
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import llm
+from homeassistant.util import dt as dt_util
 from homeassistant.util.json import JsonObjectType
 
 from ..const import LOGGER
@@ -48,6 +52,8 @@ from ..guardrails import CooperTool
 CONFIG_PATH = os.environ.get("COOPER_COACH_CONFIG", "/config/cooper_coach.json")
 LB_PER_KG = 2.20462
 BODY_WEIGHT_ENTITY = "input_number.body_weight"
+AUTO_WEIGHT_HISTORY_DAYS = 14
+_UNIT_TO_KG = {"g": 0.001, "kg": 1.0, "lb": 1 / LB_PER_KG, "oz": 1 / 35.27396}
 
 
 def _load_config() -> dict:
@@ -65,6 +71,57 @@ def _user_id(llm_context: llm.LLMContext) -> str | None:
 
 def _to_kg(value: float, unit: str) -> float:
     return value / LB_PER_KG if unit == "lb" else value
+
+
+async def _auto_weight_history(hass: HomeAssistant, entity_id: str) -> list[dict[str, Any]]:
+    """Pull an auto-capturing weight sensor's recorder history as weigh-in entries.
+
+    E.g. a phone's Health-Connect sensor synced into HA — weight that was never
+    voice-logged through log_weight, but should still count toward the trend.
+    Best-effort: any failure (no recorder, unknown entity, bad unit) returns an
+    empty list rather than breaking the summary.
+    """
+    try:
+        from homeassistant.components.recorder import get_instance, history
+    except ImportError:
+        return []
+
+    state = hass.states.get(entity_id)
+    if state is None:
+        return []
+    unit = str(state.attributes.get("unit_of_measurement", "kg")).lower()
+    factor = _UNIT_TO_KG.get(unit)
+    if factor is None:
+        LOGGER.debug("cooper: unrecognized unit '%s' on %s, skipping auto-weight", unit, entity_id)
+        return []
+
+    end = dt_util.utcnow()
+    start = end - timedelta(days=AUTO_WEIGHT_HISTORY_DAYS)
+    changes = await get_instance(hass).async_add_executor_job(
+        partial(
+            history.state_changes_during_period,
+            hass,
+            start,
+            end,
+            entity_id,
+            no_attributes=True,
+            include_start_time_state=True,
+        )
+    )
+    entries: list[dict[str, Any]] = []
+    for st in changes.get(entity_id, []):
+        try:
+            kg = round(float(st.state) * factor, 1)
+        except (TypeError, ValueError):
+            continue
+        entries.append(
+            {
+                "date": dt_util.as_local(st.last_changed).date().isoformat(),
+                "kg": kg,
+                "source": "auto",
+            }
+        )
+    return entries
 
 
 class GetCoachContextTool(CooperTool):
@@ -418,9 +475,11 @@ class GetFitnessSummaryTool(CooperTool):
     name = "get_fitness_summary"
     description = (
         "Get the user's fitness progress summary: rolling weekly weight trend (this "
-        "week's average vs last week's, not a single noisy reading), the last few "
-        "training sessions logged, and this month's drink count. Use for 'how am I "
-        "doing' / 'what's my weight trend' / 'am I on track' questions."
+        "week's average vs last week's, not a single noisy reading — includes both "
+        "voice-logged weigh-ins AND any auto-captured scale readings, see "
+        "weight_sources for the breakdown), the last few training sessions logged, "
+        "and this month's drink count. Use for 'how am I doing' / 'what's my weight "
+        "trend' / 'am I on track' questions."
     )
     parameters = vol.Schema({})
 
@@ -432,6 +491,12 @@ class GetFitnessSummaryTool(CooperTool):
     ) -> JsonObjectType:
         from .. import get_runtime
 
+        cfg = await hass.async_add_executor_job(_load_config)
+        auto_entity = (cfg.get("profile") or {}).get("auto_weight_entity")
+        extra_weights = await _auto_weight_history(hass, auto_entity) if auto_entity else []
+
         runtime = get_runtime(hass)
-        summary = await runtime.fitness.summary(_user_id(llm_context))
+        summary = await runtime.fitness.summary(
+            _user_id(llm_context), extra_weights=extra_weights
+        )
         return {"status": "ok", **summary}

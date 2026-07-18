@@ -211,11 +211,20 @@ class FitnessStore:
         }
         return {"consumed": totals, "meals_logged": meals}
 
-    async def summary(self, user_id: str | None) -> dict[str, Any]:
-        """Rolling weight trend + recent training + this-month drink count."""
+    async def summary(
+        self, user_id: str | None, extra_weights: list[dict[str, Any]] | None = None
+    ) -> dict[str, Any]:
+        """Rolling weight trend + recent training + this-month drink count.
+
+        ``extra_weights`` lets a caller (the get_fitness_summary tool) fold in
+        weigh-ins from OTHER sources — e.g. a phone's Health-Connect sensor synced
+        straight into HA — so the trend isn't blind to weight that was never voice-
+        logged through log_weight.
+        """
         data = await self._load()
         scope = data.get(_scope(user_id), {})
-        weights = scope.get("weights", [])
+        voice_weights = scope.get("weights", [])
+        extra_weights = list(extra_weights or [])
         training = scope.get("training", [])
         alcohol = scope.get("alcohol", [])
 
@@ -225,11 +234,15 @@ class FitnessStore:
         )
 
         return {
-            "weight_trend": _weekly_trend(weights),
+            "weight_trend": _weekly_trend(voice_weights + extra_weights),
+            "weight_sources": {
+                "voice_logged": len(voice_weights),
+                "auto_captured": len(extra_weights),
+            },
             "recent_training": training[-5:],
             "drinks_this_month": drinks_this_month,
             "total_logged": {
-                "weights": len(weights),
+                "weights": len(voice_weights),
                 "training": len(training),
                 "alcohol": len(alcohol),
             },
