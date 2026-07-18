@@ -16,6 +16,7 @@ macros/targets/plan details aren't committed::
       "profile": {
         "goal": "<free text — e.g. target weight/body-fat%>",
         "auto_weight_entity": "<optional sensor entity_id auto-reporting body weight, e.g. from a phone's Health-Connect bridge — folded into get_fitness_summary's trend; omit to skip>",
+        "auto_weight_owner_user_id": "<optional HA user_id — if set, the auto_weight_entity above is only merged into THIS user's summary, so it doesn't bleed into another household member's trend; omit if single-user>",
         "targets": {
           "active_phase": "<key into the phase below>",
           "phase1": {"kcal": 0, "protein_g": 0, "carb_g": 0, "fat_g": 0},
@@ -81,11 +82,6 @@ async def _auto_weight_history(hass: HomeAssistant, entity_id: str) -> list[dict
     Best-effort: any failure (no recorder, unknown entity, bad unit) returns an
     empty list rather than breaking the summary.
     """
-    try:
-        from homeassistant.components.recorder import get_instance, history
-    except ImportError:
-        return []
-
     state = hass.states.get(entity_id)
     if state is None:
         return []
@@ -95,24 +91,37 @@ async def _auto_weight_history(hass: HomeAssistant, entity_id: str) -> list[dict
         LOGGER.debug("cooper: unrecognized unit '%s' on %s, skipping auto-weight", unit, entity_id)
         return []
 
-    end = dt_util.utcnow()
-    start = end - timedelta(days=AUTO_WEIGHT_HISTORY_DAYS)
-    changes = await get_instance(hass).async_add_executor_job(
-        partial(
-            history.state_changes_during_period,
-            hass,
-            start,
-            end,
-            entity_id,
-            no_attributes=True,
-            include_start_time_state=True,
+    try:
+        from homeassistant.components.recorder import get_instance, history
+
+        end = dt_util.utcnow()
+        start = end - timedelta(days=AUTO_WEIGHT_HISTORY_DAYS)
+        changes = await get_instance(hass).async_add_executor_job(
+            partial(
+                history.state_changes_during_period,
+                hass,
+                start,
+                end,
+                entity_id,
+                no_attributes=True,
+                include_start_time_state=True,
+            )
         )
-    )
+    except Exception as err:  # noqa: BLE001 - recorder unavailable/not yet loaded, degrade quietly
+        LOGGER.debug("cooper: could not read recorder history for %s: %s", entity_id, err)
+        return []
+
     entries: list[dict[str, Any]] = []
     for st in changes.get(entity_id, []):
         try:
             kg = round(float(st.state) * factor, 1)
         except (TypeError, ValueError):
+            continue
+        # A source entity's unit can drift (e.g. a mobile-app sensor re-registering after
+        # an app update) - a plausible-bodyweight bound catches history silently converted
+        # under the wrong factor, rather than feeding a ~2x-off number into the trend.
+        if not 20.0 <= kg <= 300.0:
+            LOGGER.debug("cooper: discarding implausible auto-weight %.1fkg from %s", kg, entity_id)
             continue
         entries.append(
             {
@@ -492,11 +501,17 @@ class GetFitnessSummaryTool(CooperTool):
         from .. import get_runtime
 
         cfg = await hass.async_add_executor_job(_load_config)
-        auto_entity = (cfg.get("profile") or {}).get("auto_weight_entity")
-        extra_weights = await _auto_weight_history(hass, auto_entity) if auto_entity else []
+        profile = cfg.get("profile") or {}
+        auto_entity = profile.get("auto_weight_entity")
+        asking_user = _user_id(llm_context)
+        owner = profile.get("auto_weight_owner_user_id")
+        # A single sensor (one phone) has no notion of "whose weight this is" - if an
+        # owner is configured, only fold it into THAT user's summary, so a second
+        # household member asking Cooper doesn't get someone else's weight in their
+        # trend. Unconfigured = merge for whoever asks (the simple single-user default).
+        should_merge = bool(auto_entity) and (owner is None or owner == asking_user)
+        extra_weights = await _auto_weight_history(hass, auto_entity) if should_merge else []
 
         runtime = get_runtime(hass)
-        summary = await runtime.fitness.summary(
-            _user_id(llm_context), extra_weights=extra_weights
-        )
+        summary = await runtime.fitness.summary(asking_user, extra_weights=extra_weights)
         return {"status": "ok", **summary}
