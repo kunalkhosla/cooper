@@ -27,7 +27,7 @@ from homeassistant.helpers import intent, llm
 from homeassistant.util.json import JsonObjectType
 
 from . import _log
-from .const import EVENT_TOOL_EXECUTED, LOGGER
+from .const import AUTHORED_PREFIX, EVENT_TOOL_EXECUTED, LOGGER
 
 if TYPE_CHECKING:
     from homeassistant.components import conversation
@@ -74,6 +74,42 @@ ACTION_INTENTS = TIER_RESOLVED_INTENTS | AUTO_ACTION_INTENTS
 
 # Domains we never act on, even if somehow exposed.
 DENY_DOMAINS = frozenset({"update", "backup"})
+
+# A raw domain.service call (ActionTool) and the equivalent named intent describe the
+# same action under different names — "turn_off" vs "HassTurnOff", "unlock" vs (no
+# intent at all). Map both vocabularies onto one small set of verbs so a target gets
+# tiered identically no matter which path the model took to reach it. Anything not
+# listed here (e.g. a parameterized service like a sprinkler duration) isn't a resolved
+# on/off/toggle-style action, so it falls through to the generic bulk-threshold check.
+_VERB_ALIASES: dict[str, str] = {
+    "HassTurnOn": "on",
+    "HassTurnOff": "off",
+    "HassToggle": "toggle",
+    "HassSetPosition": "position",
+    "HassStopMoving": "stop",
+    "turn_on": "on",
+    "turn_off": "off",
+    "toggle": "toggle",
+    "open_cover": "on",
+    "close_cover": "off",
+    "open_valve": "on",
+    "close_valve": "off",
+    "lock": "on",
+    "unlock": "off",
+    "arm_away": "on",
+    "arm_home": "on",
+    "arm_night": "on",
+    "arm_vacation": "on",
+    "disarm": "off",
+}
+RESOLVED_VERBS = frozenset({"on", "off", "toggle", "position", "stop"})
+_VERB_LABELS: dict[str, str] = {
+    "off": "turn off / close",
+    "on": "turn on / open",
+    "toggle": "toggle",
+    "position": "move",
+    "stop": "stop",
+}
 
 
 @dataclass
@@ -136,16 +172,53 @@ def _resolve_states(
     return result.states if result.is_match else []
 
 
+def _resolve_states_from_service_args(
+    hass: HomeAssistant, tool_args: dict[str, Any]
+) -> list[Any]:
+    """Resolve a raw domain.service call's target to entity states.
+
+    ``llm.ActionTool`` hands the model's args straight to ``hass.services.async_call``
+    (flat ``entity_id``/``area_id``/``device_id`` fields, not a nested ``target`` dict —
+    see its docstring), so this needs its own lookup; ``_resolve_states`` above matches
+    by *name*, which only makes sense for the named-intent path. Entity-id only for now:
+    Cooper's tools consistently hand the model real entity_ids to reference (see
+    ``list_automations`` etc.) rather than device/area targets, so this covers the
+    realistic case; device_id/area_id targeting on a raw service call is not resolved
+    and will fall through to the un-tiered default below.
+    """
+    raw = tool_args.get("entity_id")
+    if isinstance(raw, str):
+        entity_ids = [raw]
+    elif isinstance(raw, list):
+        entity_ids = [str(e) for e in raw]
+    else:
+        entity_ids = []
+
+    states = []
+    for entity_id in entity_ids:
+        state = hass.states.get(entity_id)
+        if state is not None:
+            states.append(state)
+    return states
+
+
 def compute_tier(
     intent_name: str, states: list[Any], bulk_threshold: int
 ) -> tuple[Tier, str]:
-    """Return (tier, human summary) for a resolved action."""
+    """Return (tier, human summary) for a resolved action.
+
+    ``intent_name`` is either a named HA intent (``HassTurnOff``) or, for a raw
+    ``domain.service`` call, the base service name after ``base_name()`` has stripped
+    the domain (``turn_off``) — see ``_VERB_ALIASES``, which normalizes both onto the
+    same small verb vocabulary so the domain rules below apply identically either way.
+    """
     names = ", ".join(s.name for s in states) if states else "the requested target"
 
     if any(s.domain in DENY_DOMAINS for s in states):
         return Tier.NEVER, names
 
-    if intent_name not in TIER_RESOLVED_INTENTS:
+    verb = _VERB_ALIASES.get(intent_name)
+    if verb is None or verb not in RESOLVED_VERBS:
         if len(states) > bulk_threshold:
             return Tier.CONFIRM, names
         return Tier.AUTO, names
@@ -154,28 +227,37 @@ def compute_tier(
         return Tier.AUTO, names
 
     tier = Tier.AUTO
-    closing = intent_name in ("HassTurnOff", "HassToggle", "HassStopMoving")
+    closing = verb in ("off", "toggle", "stop")
     for state in states:
         device_class = state.attributes.get("device_class")
-        if state.domain == "lock" and intent_name in ("HassTurnOff", "HassToggle"):
+        domain = state.domain
+        if domain == "lock" and verb in ("off", "toggle"):
             tier = max(tier, Tier.CONFIRM)  # unlocking
-        elif state.domain in ("cover", "valve"):
+        elif domain == "alarm_control_panel" and verb in ("off", "toggle"):
+            tier = max(tier, Tier.CONFIRM)  # disarming
+        elif domain in ("cover", "valve"):
             if device_class in ("garage", "gate", "door"):
                 tier = max(tier, Tier.CONFIRM)
             elif closing:
+                tier = max(tier, Tier.CONFIRM)
+        elif domain in ("automation", "script"):
+            # Cooper's own items are freely toggleable — it made them, it knows what
+            # they do (see tools_lifecycle.py). Anything else is the user's durable
+            # automation/scheduling logic (e.g. a safety cutoff); disabling it is a
+            # standing change, not a one-shot device action, so gate it like one.
+            object_id = state.entity_id.split(".", 1)[-1]
+            config_id = str(state.attributes.get("id") or "")
+            authored = object_id.startswith(AUTHORED_PREFIX) or config_id.startswith(
+                AUTHORED_PREFIX
+            )
+            disabling = verb == "off" or (verb == "toggle" and state.state == "on")
+            if disabling and not authored:
                 tier = max(tier, Tier.CONFIRM)
 
     if len(states) > bulk_threshold:
         tier = max(tier, Tier.CONFIRM)
 
-    verb = {
-        "HassTurnOff": "turn off / close",
-        "HassTurnOn": "turn on / open",
-        "HassToggle": "toggle",
-        "HassSetPosition": "move",
-        "HassStopMoving": "stop",
-    }.get(intent_name, "act on")
-    return tier, f"{verb} {names}"
+    return tier, f"{_VERB_LABELS.get(verb, 'act on')} {names}"
 
 
 def _fingerprint(intent_name: str, states: list[Any]) -> str:
@@ -241,11 +323,10 @@ class GuardedTool(llm.Tool):
                 "reason": "Cooper's kill switch is on; no actions can be taken.",
             }
 
-        states = (
-            _resolve_states(hass, tool_input.tool_args, llm_context.assistant)
-            if self._kind == "intent"
-            else []
-        )
+        if self._kind == "intent":
+            states = _resolve_states(hass, tool_input.tool_args, llm_context.assistant)
+        else:
+            states = _resolve_states_from_service_args(hass, tool_input.tool_args)
         tier, summary = compute_tier(
             intent_name, states, runtime.confirm_bulk_threshold
         )

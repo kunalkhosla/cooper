@@ -111,8 +111,18 @@ def _automation_entity_id(hass: HomeAssistant, config_id: str) -> str:
 async def async_save_automation(
     hass: HomeAssistant, config: dict[str, Any]
 ) -> str:
-    """Stamp an id, persist, reload. Returns the resulting automation entity_id."""
-    config.setdefault("id", new_authored_id())
+    """Stamp an id, persist, reload. Returns the resulting automation entity_id.
+
+    A model-supplied id that isn't already Cooper's own is ignored in favor of a fresh
+    one: ``_save_automation_sync`` replaces whichever existing entry shares the id, and
+    ``list_automations`` hands the model every automation's real id (the user's own
+    included) — trusting an arbitrary one here would let this *create* tool silently
+    overwrite someone else's automation, config and all, not just toggle it. An id that
+    already carries ``AUTHORED_PREFIX`` is kept, so Cooper can still update its own
+    previously-authored item in place.
+    """
+    if not str(config.get("id") or "").startswith(AUTHORED_PREFIX):
+        config["id"] = new_authored_id()
     _tag_alias(config)
     config_id = str(config["id"])
     path = hass.config.path(AUTOMATIONS_FILE)

@@ -25,6 +25,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import intent, llm
 from homeassistant.util.json import JsonObjectType
 
+from ..const import AUTHORED_PREFIX
 from ..guardrails import CooperTool, audit
 from ._guard import precheck_write
 
@@ -33,14 +34,35 @@ _DENY_SERVICE_DOMAINS = frozenset(
     {"update", "backup", "hassio", "homeassistant", "recorder", "cloud", "system_log"}
 )
 
+# Services on automation/script that disable a standing item, as opposed to running one
+# (turn_on/trigger) — see the domain note in _is_risky below.
+_DISABLING_SERVICES = frozenset({"turn_off", "toggle"})
 
-def _is_risky(state: Any) -> bool:
-    """Locks, alarms, and garage/gate/door covers must NOT be driven via this bypass."""
+# 'data' is for service PARAMETERS only, never a target — see the check in async_call.
+_TARGET_KEYS = ("entity_id", "device_id", "area_id", "floor_id", "label_id")
+
+
+def _is_risky(state: Any, svc: str) -> bool:
+    """Locks, alarms, and garage/gate/door covers must NOT be driven via this bypass.
+
+    Same for disabling (turn_off/toggle) an automation or script this tool didn't
+    author itself: that's a standing change to the user's own automation/scheduling
+    logic (e.g. a safety cutoff), not a one-shot device action — see the matching rule
+    in guardrails.compute_tier, which this mirrors for the tools that path doesn't
+    cover (CooperTool subclasses tier themselves and never reach compute_tier).
+    """
     domain = state.domain
     if domain in ("lock", "alarm_control_panel"):
         return True
     if domain in ("cover", "valve"):
         return state.attributes.get("device_class") in ("garage", "gate", "door")
+    if domain in ("automation", "script") and svc in _DISABLING_SERVICES:
+        object_id = state.entity_id.split(".", 1)[-1]
+        config_id = str(state.attributes.get("id") or "")
+        authored = object_id.startswith(AUTHORED_PREFIX) or config_id.startswith(
+            AUTHORED_PREFIX
+        )
+        return not authored
     return False
 
 
@@ -79,10 +101,13 @@ class CallServiceTool(CooperTool):
         "set number of minutes via rachio.start_multiple_zone_schedule (duration in minutes), or "
         "any integration service with options. Pass service as 'domain.service', the target "
         "entities by friendly name in 'names' (and/or an 'area'), and any extra parameters in "
-        "'data' (e.g. {\"duration\": 15}). The tool resolves the names to real entity_ids — never "
-        "guess or invent ids, just name the things. It refuses locks, alarms, and garage/gate/door "
-        "covers (use the normal command for those). Changes the home, so it needs confirmation "
-        "unless confirm=true."
+        "'data' (e.g. {\"duration\": 15}) — 'data' is for parameters only, never a target; an "
+        "entity_id/device_id/area_id there is refused, even if you already know the real id from "
+        "list_automations or elsewhere — name it in 'names' instead so it's resolved and "
+        "safety-checked. Refuses if nothing resolves (never calls a service with no target — that "
+        "would hit the WHOLE domain), and refuses locks, alarms, garage/gate/door covers, and "
+        "disabling an automation/script you didn't author (use the normal command for those). "
+        "Changes the home, so it needs confirmation unless confirm=true."
     )
     parameters = vol.Schema(
         {
@@ -120,22 +145,41 @@ class CallServiceTool(CooperTool):
         data = dict(args.get("data") or {})
         confirmed = bool(args.get("confirm", False))
 
-        states = _resolve(hass, names, area, args.get("domain"), llm_context.assistant)
-        if (names or area) and not states:
+        # The model naming entities via 'names'/'area' is what gets resolved and
+        # risk-checked below; without this check a target key smuggled into 'data'
+        # instead (the model already knows real ids from list_automations/
+        # get_live_context) would reach hass.services.async_call untouched, bypassing
+        # _is_risky entirely.
+        smuggled = [k for k in _TARGET_KEYS if k in data]
+        if smuggled:
             return {
                 "status": "error",
                 "reason": (
-                    f"Couldn't match {names or area} to any exposed entity. Re-check the exact "
-                    "name, or look it up by area/domain — don't guess an id."
+                    f"'data' can't carry {', '.join(smuggled)} — that's a target, not a "
+                    "parameter. Pass the entity by friendly name in 'names' (or 'area') "
+                    "so it's resolved and safety-checked properly."
                 ),
             }
-        risky = [s.name for s in states if _is_risky(s)]
+
+        states = _resolve(hass, names, area, args.get("domain"), llm_context.assistant)
+        if not states:
+            return {
+                "status": "error",
+                "reason": (
+                    f"Couldn't match {names or area or 'anything'} to an exposed entity — "
+                    "refusing to call a service with no resolved target (that would hit "
+                    "every entity in the domain, not just what you meant). Re-check the "
+                    "exact name, or look it up by area/domain — don't guess an id."
+                ),
+            }
+        risky = [s.name for s in states if _is_risky(s, svc)]
         if risky:
             return {
                 "status": "refused",
                 "reason": (
-                    f"{', '.join(risky)} is a lock/alarm/garage-type entity — I won't drive that "
-                    "through a generic service call; use the normal command so safety applies."
+                    f"{', '.join(risky)} can't be driven through a generic service call "
+                    "(lock/alarm/garage-type entity, or disabling an automation/script you "
+                    "didn't author) — use the normal command so safety/confirmation applies."
                 ),
             }
 
@@ -152,9 +196,13 @@ class CallServiceTool(CooperTool):
         if blocked is not None:
             return blocked
 
+        # Belt-and-suspenders: states/entity_ids are non-empty by this point (checked
+        # above), but this call would silently hit every entity in the domain if that
+        # invariant were ever violated by a future edit — never let that through.
+        if not entity_ids:
+            return {"status": "error", "reason": "Internal: no target entity resolved."}
         call_data: dict[str, Any] = dict(data)
-        if entity_ids:
-            call_data["entity_id"] = entity_ids
+        call_data["entity_id"] = entity_ids
         try:
             await hass.services.async_call(domain, svc, call_data, blocking=True)
         except Exception as err:  # noqa: BLE001
