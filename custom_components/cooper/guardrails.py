@@ -341,7 +341,7 @@ def wrap_tools(
         real = _unwrap(tool)
         if isinstance(real, CooperTool):
             guarded: llm.Tool = tool  # tiers itself
-        elif isinstance(real, llm.ScriptTool):
+        elif isinstance(real, llm.ActionTool):
             guarded = GuardedTool(
                 tool, real, runtime, chat_log.conversation_id, "script"
             )
