@@ -157,7 +157,16 @@ class CooperConversationEntity(
 ):
     """A Claude-backed agent grounded in this home via HA's LLM Tools API."""
 
-    _attr_supports_streaming = True
+    # Client-side live-delta rendering (HA Companion App chat / Assist UI) has been
+    # duplicating/garbling long multi-round tool-calling turns -- confirmed server-side
+    # by comparing the app's rendered bubble against the exact same turn's logged final
+    # response (custom_components.cooper "──── done" line), which is always clean. The
+    # generation itself is unaffected either way: entity.py already streams from the
+    # Anthropic API internally regardless of this flag. This only controls whether HA's
+    # client renders incremental partial text as it arrives vs. waiting for the final
+    # ConversationResult -- turning it off trades that live partial display for a
+    # correct, un-doubled final reply.
+    _attr_supports_streaming = False
 
     def __init__(self, entry: ConfigEntry, subentry: ConfigSubentry) -> None:
         super().__init__(entry, subentry)
