@@ -1,6 +1,6 @@
 {
   "name": "Cooper",
   "render_readme": true,
-  "homeassistant": "2025.7.0",
+  "homeassistant": "2026.9.0",
   "zip_release": false
 }

@@ -23,7 +23,7 @@
   "issue_tracker": "https://github.com/kunalkhosla/cooper/issues",
   "requirements": [
     "anthropic==0.96.0",
-    "voluptuous-openapi>=0.0.4"
+    "probatio>=0.12.0"
   ],
-  "version": "0.25.1"
+  "version": "0.25.2"
 }

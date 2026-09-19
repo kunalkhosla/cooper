@@ -39,7 +39,7 @@ from anthropic.types import (
     ThinkingDelta,
     ToolUseBlock,
 )
-from voluptuous_openapi import convert
+import probatio
 
 from homeassistant.components import conversation
 from homeassistant.helpers import llm
@@ -60,10 +60,17 @@ def format_tool(
 ) -> dict[str, Any]:
     """Format an llm.Tool into an Anthropic tool spec.
 
-    voluptuous_openapi cannot express anyOf/oneOf/allOf, so they are stripped; author
-    custom-tool parameter schemas without them.
+    Mirrors HA's first-party anthropic integration (``_format_tool``): probatio is the
+    schema-conversion library HA core now uses (replacing voluptuous_openapi), and
+    ``chat_log.llm_api.custom_serializer`` returns ``probatio.UNSUPPORTED`` for
+    constructs it can't map, so this must go through ``probatio.to_openapi`` for that
+    sentinel to be recognized rather than treated as a literal schema value.
+    anyOf/oneOf/allOf still aren't representable in Anthropic's tool schema, so they're
+    stripped; author custom-tool parameter schemas without them.
     """
-    schema = convert(tool.parameters, custom_serializer=custom_serializer)
+    schema = probatio.to_openapi(
+        tool.parameters, custom_serializer=custom_serializer, openapi_version="3.1.0"
+    )
     schema = {k: v for k, v in schema.items() if k not in UNSUPPORTED_SCHEMA_KEYS}
     return {
         "name": tool.name,
