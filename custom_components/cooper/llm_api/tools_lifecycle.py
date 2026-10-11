@@ -17,6 +17,8 @@ switch / observe mode / confirmation) exactly like authoring.
 
 from __future__ import annotations
 
+import json
+
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant
@@ -48,7 +50,8 @@ class ListAutomationsTool(CooperTool):
         "List the home's automations (ALL of them, not only ones you made) with each one's "
         "friendly name, on/off state, and when it last ran — to answer 'what automations do I "
         "have', 'which are off', 'when did X last run'. Pass an optional 'name' to filter to "
-        "matching automations and include their trigger/condition/action so you can explain what "
+        "automations whose name, entity ids, description or trigger/condition/action mention it "
+        "(a device or entity name works, not just the alias), and include their trigger/condition/action so you can explain what "
         "they do. READ-ONLY: you can see any automation, but you can still only edit or delete "
         "your own (cooper_) items, never the user's."
     )
@@ -61,39 +64,45 @@ class ListAutomationsTool(CooperTool):
         llm_context: llm.LLMContext,
     ) -> JsonObjectType:
         needle = str(tool_input.tool_args.get("name") or "").strip().lower()
-        autos: list[dict] = []
-        for state in hass.states.async_all("automation"):
-            name = state.attributes.get("friendly_name") or state.entity_id
-            if needle and needle not in name.lower():
-                continue
-            autos.append(
-                {
-                    "entity_id": state.entity_id,
-                    "name": name,
-                    "id": state.attributes.get("id"),
-                    **_state_summary(hass, state.entity_id),
-                }
-            )
-        # Attach config (read-only) when filtering to specific automations.
-        if needle and autos:
+        by_id: dict[str, dict] = {}
+        by_alias: dict[str, dict] = {}
+        if needle:
             configs = await hass.async_add_executor_job(
                 autoconfig._read_yaml,
                 hass.config.path(autoconfig.AUTOMATIONS_FILE),
                 [],
             )
-            by_alias = {
-                str(c.get("alias", "")).lower(): c
-                for c in (configs if isinstance(configs, list) else [])
-                if isinstance(c, dict)
+            for c in configs if isinstance(configs, list) else []:
+                if isinstance(c, dict):
+                    if c.get("id") is not None:
+                        by_id[str(c["id"])] = c
+                    by_alias[str(c.get("alias", "")).lower()] = c
+        autos: list[dict] = []
+        for state in hass.states.async_all("automation"):
+            name = state.attributes.get("friendly_name") or state.entity_id
+            auto_id = state.attributes.get("id")
+            cfg = None
+            if needle:
+                cfg = by_id.get(str(auto_id)) if auto_id is not None else None
+                cfg = cfg or by_alias.get(name.lower())
+                # Match the name, entity_id, or anything in the serialized config
+                # (triggers, conditions, actions, entity ids, description).
+                haystack = f"{name} {state.entity_id} {json.dumps(cfg, default=str) if cfg else ''}"
+                if needle not in haystack.lower():
+                    continue
+            auto = {
+                "entity_id": state.entity_id,
+                "name": name,
+                "id": auto_id,
+                **_state_summary(hass, state.entity_id),
             }
-            for a in autos:
-                cfg = by_alias.get(a["name"].lower())
-                if cfg:
-                    a["config"] = {
-                        "trigger": cfg.get("trigger") or cfg.get("triggers"),
-                        "condition": cfg.get("condition") or cfg.get("conditions"),
-                        "action": cfg.get("action") or cfg.get("actions"),
-                    }
+            if cfg:  # read-only config, only when filtering to specific automations
+                auto["config"] = {
+                    "trigger": cfg.get("trigger") or cfg.get("triggers"),
+                    "condition": cfg.get("condition") or cfg.get("conditions"),
+                    "action": cfg.get("action") or cfg.get("actions"),
+                }
+            autos.append(auto)
         return {"count": len(autos), "automations": autos}
 
 
