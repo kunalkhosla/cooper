@@ -17,9 +17,8 @@ switch / observe mode / confirmation) exactly like authoring.
 
 from __future__ import annotations
 
-import json
-
 import voluptuous as vol
+import yaml
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er, llm
@@ -40,6 +39,16 @@ def _state_summary(hass: HomeAssistant, entity_id: str | None) -> dict[str, obje
         "state": state.state,
         "last_triggered": str(state.attributes.get("last_triggered") or "never"),
     }
+
+
+def _config_text(node: object) -> str:
+    """All string/scalar *values* in a config (not dict keys), so a search for "state" or
+    "action" doesn't match every automation via the schema keys."""
+    if isinstance(node, dict):
+        return " ".join(_config_text(v) for v in node.values())
+    if isinstance(node, (list, tuple)):
+        return " ".join(_config_text(v) for v in node)
+    return "" if node is None else str(node)
 
 
 class ListAutomationsTool(CooperTool):
@@ -67,16 +76,20 @@ class ListAutomationsTool(CooperTool):
         by_id: dict[str, dict] = {}
         by_alias: dict[str, dict] = {}
         if needle:
-            configs = await hass.async_add_executor_job(
-                autoconfig._read_yaml,
-                hass.config.path(autoconfig.AUTOMATIONS_FILE),
-                [],
-            )
+            try:
+                configs = await hass.async_add_executor_job(
+                    autoconfig._read_yaml,
+                    hass.config.path(autoconfig.AUTOMATIONS_FILE),
+                    [],
+                )
+            except yaml.YAMLError:
+                configs = []  # degrade to name/entity_id matching
             for c in configs if isinstance(configs, list) else []:
                 if isinstance(c, dict):
                     if c.get("id") is not None:
                         by_id[str(c["id"])] = c
-                    by_alias[str(c.get("alias", "")).lower()] = c
+                    if c.get("alias"):
+                        by_alias.setdefault(str(c["alias"]).lower(), c)
         autos: list[dict] = []
         for state in hass.states.async_all("automation"):
             name = state.attributes.get("friendly_name") or state.entity_id
@@ -87,7 +100,7 @@ class ListAutomationsTool(CooperTool):
                 cfg = cfg or by_alias.get(name.lower())
                 # Match the name, entity_id, or anything in the serialized config
                 # (triggers, conditions, actions, entity ids, description).
-                haystack = f"{name} {state.entity_id} {json.dumps(cfg, default=str) if cfg else ''}"
+                haystack = f"{name} {state.entity_id} {_config_text(cfg)}"
                 if needle not in haystack.lower():
                     continue
             auto = {

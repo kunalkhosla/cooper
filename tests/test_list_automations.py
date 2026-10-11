@@ -108,3 +108,29 @@ async def test_missing_yaml_falls_back_to_alias_only(tmp_path):
     (tmp_path / "automations.yaml").unlink()
     assert names(await call(hass, name="porch")) == ["Porch light"]
     assert (await call(hass, name="sprinkler"))["count"] == 0
+
+
+async def test_schema_keys_do_not_match(tmp_path):
+    # "platform"/"service"/"trigger" are config keys, not content.
+    for needle in ("platform", "service", "trigger", "action"):
+        assert (await call(make_hass(tmp_path), name=needle))["count"] == 0
+
+
+async def test_id_missing_from_yaml_falls_back_to_alias(tmp_path):
+    hass = make_hass(tmp_path, [{**AUTOMATIONS[0], "id": "other"}])
+    assert names(await call(hass, name="sprinkler")) == ["Evening lights"]
+
+
+async def test_bad_yaml_degrades_to_name_match(tmp_path):
+    hass = make_hass(tmp_path)
+    (tmp_path / "automations.yaml").write_text("a: [unclosed")
+    assert names(await call(hass, name="porch")) == ["Porch light"]
+
+
+async def test_non_list_yaml_and_date_values(tmp_path):
+    import datetime
+
+    hass = make_hass(tmp_path, {"not": "a list"})
+    assert names(await call(hass, name="porch")) == ["Porch light"]
+    cfg = [{**AUTOMATIONS[0], "description": datetime.date(2026, 1, 2)}]
+    assert names(await call(make_hass(tmp_path, cfg), name="2026-01-02")) == ["Evening lights"]
